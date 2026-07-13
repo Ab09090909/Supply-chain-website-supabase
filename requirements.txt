@@ -1,6 +1,7 @@
 streamlit>=1.39.0
 supabase>=2.7.4
 python-dotenv>=1.0.1
+tomli>=2.0.1; python_version < "3.11"
 pandas>=2.2.3
 pydantic>=2.9.2
 email-validator>=2.2.0
