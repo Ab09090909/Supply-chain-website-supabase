@@ -37,6 +37,73 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
+# 1b. SUPABASE CONFIG HEALTH CHECK (runs once at startup)
+# ---------------------------------------------------------------------------
+@st.cache_data
+def _check_supabase_config() -> dict:
+    """Verify Supabase credentials are reachable. Cached for 60s."""
+    from database.connection import _get_config, _debug_config_status
+    url = _get_config("SUPABASE_URL")
+    anon = _get_config("SUPABASE_ANON_KEY")
+    status = _debug_config_status()
+    status["SUPABASE_URL_loaded"] = bool(url)
+    status["SUPABASE_ANON_KEY_loaded"] = bool(anon)
+
+    # Try a real connection test
+    if url and anon:
+        try:
+            from supabase import create_client
+            client = create_client(url, anon)
+            # Lightweight call: fetch 1 row from profiles (returns [] if empty)
+            client.table("profiles").select("id").limit(1).execute()
+            status["connection_ok"] = True
+            status["connection_error"] = None
+        except Exception as e:
+            status["connection_ok"] = False
+            status["connection_error"] = str(e)[:300]
+    else:
+        status["connection_ok"] = False
+        status["connection_error"] = "Missing URL or anon key"
+    return status
+
+
+def _render_config_warning(status: dict):
+    """Show a clear status banner on auth pages if config is broken."""
+    if status.get("connection_ok"):
+        return  # all good, stay silent
+
+    st.error("⚠️ Supabase is not configured correctly. Auth will fail until this is fixed.")
+    with st.expander("🔍 Diagnostic details", expanded=True):
+        st.markdown(f"""
+| Check | Status |
+|-------|--------|
+| `.env` file exists at project root | `{'✅' if status['env_file_exists'] else '❌'}` |
+| `.streamlit/secrets.toml` exists | `{'✅' if status['secrets_toml_exists'] else '❌'}` |
+| `python-dotenv` installed | `{'✅' if status['dotenv_installed'] else '❌ (pip install python-dotenv)'}` |
+| `SUPABASE_URL` loaded | `{'✅' if status['SUPABASE_URL_loaded'] else '❌'}` |
+| `SUPABASE_ANON_KEY` loaded | `{'✅' if status['SUPABASE_ANON_KEY_loaded'] else '❌'}` |
+| Supabase API reachable | `{'✅' if status['connection_ok'] else '❌'}` |
+""")
+        if status.get("connection_error"):
+            st.code(status["connection_error"], language="text")
+
+        st.markdown("""
+**How to fix:**
+
+1. Make sure you have a `.env` file at the **project root** (same folder as `app.py`), not in a subfolder.
+2. Contents should look like:
+   ```
+   SUPABASE_URL=https://YOURPROJECT.supabase.co
+   SUPABASE_ANON_KEY=eyJhbGciOi...your-anon-key...
+   SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...your-service-role-key...
+   ```
+3. **No quotes, no spaces around `=`**, one key per line.
+4. Restart Streamlit: `Ctrl+C` then `streamlit run app.py` again.
+""")
+
+
+
+# ---------------------------------------------------------------------------
 # 2. QUERY-PARAM ROUTER (for auth pages: ?page=signup|forgot-password|...)
 # ---------------------------------------------------------------------------
 query_page = st.query_params.get("page", "")
@@ -44,6 +111,13 @@ query_page = st.query_params.get("page", "")
 
 def render_auth_page():
     """Route to the correct auth page based on ?page= query param."""
+    # Show config warning at top of every auth page if Supabase isn't reachable
+    try:
+        status = _check_supabase_config()
+        _render_config_warning(status)
+    except Exception as e:
+        st.error(f"Config check failed: {e}")
+
     if query_page == "signup":
         if render_signup_page():
             st.query_params.clear()
