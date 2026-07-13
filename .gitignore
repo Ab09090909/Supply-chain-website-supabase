@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (legacy SQLite fallback, if any)
+data/
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Supabase local
+supabase/.branches
+supabase/.temp
