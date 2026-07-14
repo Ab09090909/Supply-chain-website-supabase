@@ -203,33 +203,37 @@ def _role_nav(role: str, force_nav: str | None = None) -> str | None:
     common_tabs = {
         "marketplace": "🛒 Marketplace",
         "ai_insights": "🤖 AI Insights",
+        "assistant": "💬 AI Assistant",
         "notifications": "🔔 Notifications",
         "profile": "👤 Profile",
     }
     if role == "producer":
-        opts = ["dashboard", "inventory", "orders"] + list(common_tabs.keys())
+        opts = ["dashboard", "inventory", "orders", "merchant_match"] + list(common_tabs.keys())
         labels = {
             "dashboard": "📊 Dashboard",
             "inventory": "📦 Inventory",
             "orders": "🛒 Orders",
+            "merchant_match": "🤝 Merchant Match",
             **common_tabs,
         }
         key = "producer_nav"
     elif role == "merchant":
-        opts = ["dashboard", "orders"] + list(common_tabs.keys())
+        opts = ["dashboard", "orders", "merchant_requests"] + list(common_tabs.keys())
         labels = {
             "dashboard": "📊 Dashboard",
             "orders": "🛍️ My Orders",
+            "merchant_requests": "📨 Match Requests",
             **common_tabs,
         }
         key = "merchant_nav"
     elif role == "customer":
-        opts = ["marketplace", "cart", "orders"] + ["ai_insights", "notifications", "profile"]
+        opts = ["marketplace", "cart", "orders"] + ["ai_insights", "assistant", "notifications", "profile"]
         labels = {
             "marketplace": "🛒 Marketplace",
             "cart": "🛒 Cart",
             "orders": "📦 My Orders",
             "ai_insights": "🤖 AI Insights",
+            "assistant": "💬 AI Assistant",
             "notifications": "🔔 Notifications",
             "profile": "👤 Profile",
         }
@@ -275,9 +279,17 @@ def render_role_content(choice: str | None):
             from pages.common import render_ai_insights
             render_ai_insights()
             return
+        if choice == "assistant":
+            from pages.common import render_ai_assistant
+            render_ai_assistant()
+            return
         if choice == "notifications":
             from pages.common import render_notifications
             render_notifications()
+            return
+        if choice == "merchant_requests":
+            from pages.common import render_merchant_requests
+            render_merchant_requests()
             return
 
         # ---- Role-specific tabs ----
@@ -287,11 +299,14 @@ def render_role_content(choice: str | None):
                 render_producer_inventory,
                 render_producer_orders,
                 render_producer_profile,
+                render_producer_merchant_match,
             )
             if choice == "inventory":
                 render_producer_inventory()
             elif choice == "orders":
                 render_producer_orders()
+            elif choice == "merchant_match":
+                render_producer_merchant_match()
             elif choice == "profile":
                 render_producer_profile()
             else:
@@ -305,6 +320,9 @@ def render_role_content(choice: str | None):
             )
             if choice == "orders":
                 render_merchant_orders()
+            elif choice == "merchant_requests":
+                from pages.common import render_merchant_requests
+                render_merchant_requests()
             elif choice == "profile":
                 render_merchant_profile()
             else:
