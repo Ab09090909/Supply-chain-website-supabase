@@ -33,14 +33,23 @@ DOCUMENT_TYPES = [
 
 
 def is_user_verified() -> bool:
-    """Check if the current user is verified."""
+    """Check if the current user is verified.
+
+    LENIENT: If verification_status is not set (e.g. migration_v5 not run yet,
+    or the column doesn't exist), returns True so the user can access the app.
+    Only blocks access when verification_status is explicitly 'pending' or 'rejected'.
+    """
     user = get_current_user()
     if not user:
         return False
     # Admins are always considered verified
     if user.get("role") == "admin":
         return True
-    return user.get("verification_status") == "verified"
+    # If verification_status is not set at all, allow access (graceful degradation)
+    status = user.get("verification_status")
+    if status is None:
+        return True  # column doesn't exist or value is null — allow access
+    return status == "verified"
 
 
 def get_verification_status() -> str:
@@ -50,7 +59,10 @@ def get_verification_status() -> str:
         return "not_submitted"
     if user.get("role") == "admin":
         return "verified"
-    return user.get("verification_status") or "pending"
+    status = user.get("verification_status")
+    if status is None:
+        return "not_required"  # column doesn't exist — verification not enforced
+    return status or "pending"
 
 
 def render_verification_page():
