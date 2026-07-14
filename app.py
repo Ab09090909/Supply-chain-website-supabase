@@ -219,11 +219,34 @@ def _get_validate_config():
 @st.cache_data
 def _check_supabase_config() -> dict:
     """Verify Supabase credentials are reachable. Cached."""
+    # Step 1: Check if supabase package is installed
+    try:
+        import supabase  # noqa: F401
+    except ImportError:
+        return {
+            "connection_ok": False,
+            "connection_error": (
+                "The `supabase` Python package is not installed. "
+                "On Streamlit Cloud: go to Settings → Requirements and make sure "
+                "`requirements.txt` is being used. Or add a `packages.txt` file. "
+                "Locally: run `pip install -r requirements.txt`."
+            ),
+            "SUPABASE_URL_loaded": False,
+            "SUPABASE_ANON_KEY_loaded": False,
+        }
+
+    # Step 2: Try to import database.connection
     try:
         from database.connection import _get_config, _debug_config_status
-    except Exception:
-        return {"connection_ok": False, "connection_error": "database.connection module not found"}
+    except Exception as e:
+        return {
+            "connection_ok": False,
+            "connection_error": f"database.connection module failed to load: {e}",
+            "SUPABASE_URL_loaded": False,
+            "SUPABASE_ANON_KEY_loaded": False,
+        }
 
+    # Step 3: Read config
     try:
         url = _get_config("SUPABASE_URL")
         anon = _get_config("SUPABASE_ANON_KEY")
@@ -233,6 +256,7 @@ def _check_supabase_config() -> dict:
     except Exception as e:
         return {"connection_ok": False, "connection_error": str(e)}
 
+    # Step 4: Try a real connection
     if url and anon:
         try:
             from supabase import create_client
@@ -245,7 +269,7 @@ def _check_supabase_config() -> dict:
             status["connection_error"] = str(e)[:400]
     else:
         status["connection_ok"] = False
-        status["connection_error"] = "Missing URL or anon key"
+        status["connection_error"] = "Missing SUPABASE_URL or SUPABASE_ANON_KEY in secrets."
     return status
 
 
