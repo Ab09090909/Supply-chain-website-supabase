@@ -58,28 +58,70 @@ def _read_secrets_toml() -> dict:
         return {}
 
 
-def _get_config(key: str) -> Optional[str]:
-    """Read config from: os.environ → st.secrets → manual TOML parse."""
-    # (a) Real environment variable (includes anything load_dotenv just set)
-    val = os.environ.get(key)
-    if val and not val.startswith("your-"):  # ignore placeholder values
-        return val
+# Aliases — accept multiple key names so users don't have to remember the
+# exact one. (Common mistake: SUPABASE_KEY instead of SUPABASE_ANON_KEY.)
+_KEY_ALIASES = {
+    "SUPABASE_URL":                ["SUPABASE_URL"],
+    "SUPABASE_ANON_KEY":           ["SUPABASE_ANON_KEY", "SUPABASE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"],
+    "SUPABASE_SERVICE_ROLE_KEY":   ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SERVICE_ROLE_KEY"],
+    "APP_URL":                     ["APP_URL", "NEXT_PUBLIC_APP_URL"],
+    "GROQ_API_KEY":                ["GROQ_API_KEY", "GROQ_KEY", "GROQ_TOKEN"],
+}
 
-    # (b) Streamlit secrets
+
+def _get_config(key: str) -> Optional[str]:
+    """Read config from: os.environ → st.secrets → manual TOML parse.
+
+    Tries every alias for the requested key, so users who wrote
+    SUPABASE_KEY instead of SUPABASE_ANON_KEY still get a working client.
+    """
+    aliases = _KEY_ALIASES.get(key, [key])
+
+    for alias in aliases:
+        # (a) Real environment variable (includes anything load_dotenv just set)
+        val = os.environ.get(alias)
+        if val and not val.startswith("your-"):  # ignore placeholder values
+            return val
+
+    # (b) Streamlit secrets — read once, check all aliases
     if st is not None:
         try:
-            val = st.secrets.get(key)
-            if val and not str(val).startswith("your-"):
-                return str(val)
+            for alias in aliases:
+                val = st.secrets.get(alias)
+                if val and not str(val).startswith("your-"):
+                    return str(val)
         except Exception:
             pass
 
-    # (c) Manual TOML fallback
+    # (c) Manual TOML fallback — read once, check all aliases
     secrets = _read_secrets_toml()
-    val = secrets.get(key)
-    if val and not str(val).startswith("your-"):
-        return str(val)
+    for alias in aliases:
+        val = secrets.get(alias)
+        if val and not str(val).startswith("your-"):
+            return str(val)
 
+    return None
+
+
+def _get_config_source(key: str) -> Optional[str]:
+    """For diagnostics: returns where the value was actually found."""
+    aliases = _KEY_ALIASES.get(key, [key])
+    for alias in aliases:
+        if os.environ.get(alias) and not os.environ.get(alias).startswith("your-"):
+            return f"os.environ[{alias!r}]"
+    if st is not None:
+        try:
+            for alias in aliases:
+                val = st.secrets.get(alias)
+                if val and not str(val).startswith("your-"):
+                    return f"st.secrets[{alias!r}]"
+        except Exception:
+            pass
+    secrets = _read_secrets_toml()
+    for alias in aliases:
+        val = secrets.get(alias)
+        if val and not str(val).startswith("your-"):
+            return f"secrets.toml[{alias!r}]"
     return None
 
 
