@@ -4,9 +4,10 @@ from __future__ import annotations
 import streamlit as st
 
 from auth.session import get_current_user
-from database.connection import get_supabase_admin_client
+from database.connection import get_supabase_admin_client, get_supabase_client
 from utils.ui import page_header
 from utils.helpers import format_datetime
+from utils.db_health import render_db_health_warning
 
 
 def render_admin_fraud():
@@ -16,11 +17,31 @@ def render_admin_fraud():
     if not user:
         return
 
+    # Try admin client first; fall back to anon client (RLS-limited)
     try:
         client = get_supabase_admin_client()
+    except Exception:
+        client = get_supabase_client()
+
+    try:
         alerts = client.table("fraud_logs").select("*").order("created_at", desc=True).execute().data or []
     except Exception as e:
-        st.error(f"Failed to load alerts: {e}")
+        err = str(e)
+        if "401" in err or "Invalid API key" in err or "invalid api key" in err.lower():
+            st.error("❌ Admin access failed: Invalid Supabase API key.")
+            st.info(
+                "**To fix this:** Check your Supabase credentials in Streamlit secrets:\n\n"
+                "1. `SUPABASE_URL` — your project URL\n"
+                "2. `SUPABASE_ANON_KEY` — the anon public key\n"
+                "3. `SUPABASE_SERVICE_ROLE_KEY` — the service_role key (needed for admin features)\n\n"
+                "Get these from: **Supabase Dashboard → Project Settings → API**"
+            )
+        elif "PGRST205" in err or "could not find" in err.lower():
+            st.error("❌ The `fraud_logs` table doesn't exist yet.")
+            st.info("Run `supabase/schema.sql` in your Supabase SQL Editor first.")
+            render_db_health_warning()
+        else:
+            st.error(f"Failed to load alerts: {e}")
         return
 
     if not alerts:
