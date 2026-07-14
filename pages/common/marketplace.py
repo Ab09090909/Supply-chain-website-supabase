@@ -110,36 +110,39 @@ def render_shared_marketplace():
 
     st.markdown(f"###### {len(filtered)} product(s) found")
 
-    # Grid of product cards with smaller images + organized boxes
+    # Grid of product cards — compact, modern design
     cols = st.columns(3)
     for i, p in enumerate(filtered):
         with cols[i % 3]:
             with st.container(border=True):
-                # Product image — smaller, fixed height, object-fit cover
+                # Product image — compact 100px height, rounded
                 image_url = p.get("image_url")
                 if image_url:
                     try:
                         st.markdown(
-                            f"<div style='height:140px; overflow:hidden; border-radius:8px; margin-bottom:0.5rem;'>"
-                            f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover;' /></div>",
+                            f"<div style='height:100px; overflow:hidden; border-radius:8px; margin-bottom:0.4rem;'>"
+                            f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover; transition: transform 0.3s ease;' /></div>",
                             unsafe_allow_html=True,
                         )
                     except Exception:
                         st.markdown("🖼️")
                 else:
                     st.markdown(
-                        "<div style='height:140px; background:#f1f5f9; border-radius:8px; "
+                        "<div style='height:100px; background:linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); border-radius:8px; "
                         "display:flex; align-items:center; justify-content:center; "
-                        "font-size:2.5rem; color:#94a3b8; margin-bottom:0.5rem;'>📦</div>",
+                        "font-size:2rem; color:#94a3b8; margin-bottom:0.4rem;'>📦</div>",
                         unsafe_allow_html=True,
                     )
 
                 producer = p.get("profiles") or {}
-                # Compact name + producer line
-                st.markdown(f"**{p['name']}**")
-                st.caption(f"by {producer.get('full_name', 'Unknown')} · 🏷️ {p.get('category', 'Other')}")
+                # Compact name (smaller font)
+                st.markdown(
+                    f"<div style='font-size:0.9rem; font-weight:600; color:#0f172a; line-height:1.3; margin-bottom:0.15rem;'>{p['name']}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(f"by {producer.get('full_name', 'Unknown')} · {p.get('category', 'Other')}")
 
-                # Quality + brand badges in one compact line
+                # Quality + brand badges — compact inline
                 if p.get("quality_grade") or p.get("brand"):
                     badges = []
                     if p.get("quality_grade"):
@@ -147,18 +150,17 @@ def render_shared_marketplace():
                     if p.get("brand"):
                         badges.append(f"🏷️ {p['brand']}")
                     st.markdown(
-                        f"<div style='font-size:0.75rem; color:#64748b; margin:0.25rem 0;'>"
+                        f"<div style='font-size:0.7rem; color:#64748b; margin:0.2rem 0; font-weight:500;'>"
                         f"{' · '.join(badges)}</div>",
                         unsafe_allow_html=True,
                     )
 
-                # Price + stock in a 2-column compact row
-                col_p, col_s = st.columns(2)
-                with col_p:
-                    st.markdown(f"### {format_currency(p['price'])}")
-                with col_s:
-                    st.caption(f"📦 {p['stock']} {format_unit(p.get('unit'))}")
-                    st.caption(f"💖 {save_counts.get(p['id'], 0)} saved")
+                # Price (prominent) + stock/saves (compact below)
+                st.markdown(
+                    f"<div style='font-size:1.1rem; font-weight:700; color:#047857; margin:0.3rem 0 0.15rem 0;'>{format_currency(p['price'])}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(f"📦 {p['stock']} {format_unit(p.get('unit'))} · 💖 {save_counts.get(p['id'], 0)} saved")
 
                 # Action buttons
                 col_a, col_b = st.columns(2)
