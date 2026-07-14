@@ -63,6 +63,21 @@ def render_customer_marketplace():
     for i, p in enumerate(filtered):
         with cols[i % 3]:
             with st.container(border=True):
+                # Product image (NEW)
+                image_url = p.get("image_url")
+                if image_url:
+                    try:
+                        st.image(image_url, use_container_width=True)
+                    except Exception:
+                        st.markdown("📦")
+                else:
+                    st.markdown(
+                        "<div style='height:120px; background:#f1f5f9; border-radius:8px; "
+                        "display:flex; align-items:center; justify-content:center; "
+                        "font-size:2.5rem; color:#94a3b8;'>📦</div>",
+                        unsafe_allow_html=True,
+                    )
+
                 producer = p.get("profiles") or {}
                 st.markdown(f"**{p['name']}**")
                 st.caption(f"by {producer.get('full_name', 'Unknown')}")
