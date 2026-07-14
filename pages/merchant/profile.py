@@ -1,4 +1,4 @@
-"""Merchant profile page — now with avatar image upload."""
+"""Merchant profile page — now with avatar image upload + preferences."""
 from __future__ import annotations
 
 import streamlit as st
@@ -7,6 +7,7 @@ from auth.session import get_current_user
 from database.connection import get_supabase_client
 from utils.ui import page_header
 from utils.storage import render_image_uploader
+from utils.preferences import render_preferences_section
 
 
 def render_merchant_profile():
@@ -56,5 +57,9 @@ def render_merchant_profile():
                     "avatar_url": avatar_url,
                 })
                 st.success("Profile updated!")
+                st.rerun()  # Force rerun so sidebar avatar refreshes
             except Exception as e:
                 st.error(f"Update failed: {e}")
+
+    # ---- Preferences section (NEW) ----
+    render_preferences_section()
