@@ -46,10 +46,22 @@ try:
 except ImportError:
     try:
         # Fallback: use our lightweight HTTP-based client (no pydantic_core etc.)
-        from database.supabase_lite import create_client, Client
+        # Use relative import since we're inside the database package
+        from .supabase_lite import create_client, Client
     except ImportError:
-        create_client = None
-        Client = None
+        try:
+            # Absolute import fallback
+            from database.supabase_lite import create_client, Client
+        except ImportError:
+            try:
+                # Last resort: direct import (if database/ is on sys.path)
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from supabase_lite import create_client, Client
+            except ImportError:
+                create_client = None
+                Client = None
 
 
 # 3. Fallback TOML parser for .streamlit/secrets.toml (used only if st.secrets fails)
@@ -159,9 +171,11 @@ def get_supabase_client() -> Client:
     """User-scoped Supabase client (RLS enforced)."""
     if create_client is None:
         raise RuntimeError(
-            "The `supabase` Python package is not installed or failed to import.\n"
-            "Fix: Run `pip install -r requirements.txt` and restart the app.\n"
-            "If the error persists, check for version conflicts in your Python environment."
+            "Could not load the Supabase client. This means:\n"
+            "1. The `supabase` Python package is not installed, AND\n"
+            "2. The fallback `database/supabase_lite.py` file is missing or broken.\n\n"
+            "Fix: Make sure `database/supabase_lite.py` exists in your repo. "
+            "It provides a lightweight HTTP-based client that needs no dependencies."
         )
     url = _get_config("SUPABASE_URL")
     key = _get_config("SUPABASE_ANON_KEY")
