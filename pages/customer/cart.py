@@ -56,8 +56,8 @@ def render_customer_cart():
                     st.rerun()
 
     st.markdown("---")
-    tax = subtotal * 0.08
-    shipping = 8.00 if subtotal < 100 else 0.0
+    tax = subtotal * 0.15  # 15% VAT (Ethiopia)
+    shipping = 200.0 if subtotal < 5000 else 0.0  # ETB
     total = subtotal + tax + shipping
 
     col1, col2 = st.columns([3, 1])
