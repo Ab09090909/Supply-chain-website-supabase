@@ -4,9 +4,10 @@ from __future__ import annotations
 import streamlit as st
 
 from auth.session import get_current_user
-from database.connection import get_supabase_admin_client
+from database.connection import get_supabase_admin_client, get_supabase_client
 from utils.ui import page_header, metric_card
 from utils.helpers import format_currency
+from utils.db_health import render_db_health_warning
 
 
 def render_admin_dashboard():
@@ -16,15 +17,36 @@ def render_admin_dashboard():
     if not user:
         return
 
+    # Try admin client first; fall back to anon client (RLS-limited)
     try:
         client = get_supabase_admin_client()
+    except Exception:
+        client = get_supabase_client()
 
+    try:
         users = client.table("profiles").select("*").execute().data or []
         products = client.table("products").select("*").execute().data or []
         orders = client.table("orders").select("*").execute().data or []
         fraud = client.table("fraud_logs").select("*").execute().data or []
     except Exception as e:
-        st.error(f"Failed to load stats: {e}")
+        err = str(e)
+        if "401" in err or "Invalid API key" in err or "invalid api key" in err.lower():
+            st.error("❌ Admin access failed: Invalid Supabase API key.")
+            st.info(
+                "**To fix this:** Check your Supabase credentials in Streamlit secrets:\n\n"
+                "1. `SUPABASE_URL` — your project URL\n"
+                "2. `SUPABASE_ANON_KEY` — the anon public key (NOT the service_role key)\n"
+                "3. `SUPABASE_SERVICE_ROLE_KEY` — the service_role key (for admin features)\n\n"
+                "Get these from: **Supabase Dashboard → Project Settings → API**\n\n"
+                "The admin dashboard needs the **service_role key** to see all users. "
+                "If you only have the anon key, admin features will be limited by RLS."
+            )
+        elif "PGRST205" in err or "could not find" in err.lower():
+            st.error("❌ Database tables are missing.")
+            st.info("Run `supabase/schema.sql` and `supabase/policies.sql` in your Supabase SQL Editor first.")
+            render_db_health_warning()
+        else:
+            st.error(f"Failed to load stats: {e}")
         return
 
     # Counts by role
