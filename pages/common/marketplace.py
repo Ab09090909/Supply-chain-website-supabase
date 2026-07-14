@@ -110,49 +110,55 @@ def render_shared_marketplace():
 
     st.markdown(f"###### {len(filtered)} product(s) found")
 
-    # Grid of product cards with images
+    # Grid of product cards with smaller images + organized boxes
     cols = st.columns(3)
     for i, p in enumerate(filtered):
         with cols[i % 3]:
             with st.container(border=True):
-                # Product image
+                # Product image — smaller, fixed height, object-fit cover
                 image_url = p.get("image_url")
                 if image_url:
                     try:
-                        st.image(image_url, use_container_width=True)
+                        st.markdown(
+                            f"<div style='height:140px; overflow:hidden; border-radius:8px; margin-bottom:0.5rem;'>"
+                            f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover;' /></div>",
+                            unsafe_allow_html=True,
+                        )
                     except Exception:
-                        st.markdown("🖼️ _Image unavailable_")
+                        st.markdown("🖼️")
                 else:
                     st.markdown(
-                        "<div style='height:180px; background:#f1f5f9; border-radius:8px; "
+                        "<div style='height:140px; background:#f1f5f9; border-radius:8px; "
                         "display:flex; align-items:center; justify-content:center; "
-                        "font-size:3rem; color:#94a3b8;'>📦</div>",
+                        "font-size:2.5rem; color:#94a3b8; margin-bottom:0.5rem;'>📦</div>",
                         unsafe_allow_html=True,
                     )
 
                 producer = p.get("profiles") or {}
+                # Compact name + producer line
                 st.markdown(f"**{p['name']}**")
-                st.caption(
-                    f"by {producer.get('full_name', 'Unknown')} "
-                    f"{role_badge(producer.get('role', ''))}",
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"📦 `{p['sku']}` · 🏷️ {p.get('category', 'Other')}")
+                st.caption(f"by {producer.get('full_name', 'Unknown')} · 🏷️ {p.get('category', 'Other')}")
 
-                # Quality / brand row (NEW)
+                # Quality + brand badges in one compact line
                 if p.get("quality_grade") or p.get("brand"):
-                    q_str = p.get("quality_grade", "")
-                    b_str = p.get("brand", "")
-                    parts = []
-                    if q_str: parts.append(f"⭐ {q_str}")
-                    if b_str: parts.append(f"🏷️ {b_str}")
-                    st.caption(" · ".join(parts))
+                    badges = []
+                    if p.get("quality_grade"):
+                        badges.append(f"⭐ {p['quality_grade']}")
+                    if p.get("brand"):
+                        badges.append(f"🏷️ {p['brand']}")
+                    st.markdown(
+                        f"<div style='font-size:0.75rem; color:#64748b; margin:0.25rem 0;'>"
+                        f"{' · '.join(badges)}</div>",
+                        unsafe_allow_html=True,
+                    )
 
-                st.markdown(f"### {format_currency(p['price'])}")
-                st.caption(
-                    f"Stock: {p['stock']} {format_unit(p.get('unit'))} · "
-                    f"Saved by {save_counts.get(p['id'], 0)} user(s)"
-                )
+                # Price + stock in a 2-column compact row
+                col_p, col_s = st.columns(2)
+                with col_p:
+                    st.markdown(f"### {format_currency(p['price'])}")
+                with col_s:
+                    st.caption(f"📦 {p['stock']} {format_unit(p.get('unit'))}")
+                    st.caption(f"💖 {save_counts.get(p['id'], 0)} saved")
 
                 # Action buttons
                 col_a, col_b = st.columns(2)
