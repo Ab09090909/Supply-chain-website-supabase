@@ -415,10 +415,17 @@ def render_role_content(choice: str | None):
         return
 
     role = get_current_role()
-    is_user_verified, _, _ = _get_verification_helpers()
+    is_user_verified_fn, _, _ = _get_verification_helpers()
 
     try:
-        verified = is_user_verified() if is_user_verified else True
+        # Default to True (allow access) if anything goes wrong
+        verified = True
+        if is_user_verified_fn:
+            try:
+                verified = is_user_verified_fn()
+            except Exception:
+                verified = True  # if check fails, allow access (graceful)
+
         if not verified and choice not in ("marketplace", "profile"):
             _render_verification_gate()
             return
