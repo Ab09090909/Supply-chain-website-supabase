@@ -56,13 +56,13 @@ def render_producer_dashboard():
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        metric_card("Total Products", str(total_products))
+        metric_card("Total Products", str(total_products), icon="📦")
     with col2:
-        metric_card("Low Stock Alerts", str(low_stock), color="#ef4444" if low_stock > 0 else "#10b981")
+        metric_card("Low Stock", str(low_stock), icon="⚠️", color="#ef4444" if low_stock > 0 else "#10b981")
     with col3:
-        metric_card("Total Revenue", format_currency(total_revenue))
+        metric_card("Revenue", format_currency(total_revenue), icon="💰")
     with col4:
-        metric_card("Pending Orders", str(pending_orders))
+        metric_card("Pending Orders", str(pending_orders), icon="⏳")
 
     st.markdown("---")
 
