@@ -185,9 +185,26 @@ def render_shared_marketplace():
                         st.rerun()
 
                 # Contact producer button (full width below)
+                # Pre-fills the message form with producer's phone number
                 if st.button("💬 Contact Producer", key=f"contact_{p['id']}", use_container_width=True):
                     st.session_state["pending_message_to"] = producer.get("id")
                     st.session_state["pending_message_to_name"] = producer.get("full_name")
                     st.session_state["pending_message_subject"] = f"Inquiry: {p['name']}"
+
+                    # Pre-fill the message body with producer's phone and product info
+                    producer_phone = producer.get("phone") or "Not provided"
+                    producer_email = producer.get("email") or "Not provided"
+                    producer_company = producer.get("company") or "Independent Producer"
+                    pre_filled_body = (
+                        f"Hello {producer.get('full_name', 'there')},\n\n"
+                        f"I'm interested in your product: {p['name']} (SKU: {p['sku']}).\n\n"
+                        f"Producer contact information:\n"
+                        f"- Phone: {producer_phone}\n"
+                        f"- Email: {producer_email}\n"
+                        f"- Company: {producer_company}\n\n"
+                        f"Could you please provide more details about availability and delivery?\n\n"
+                        f"Thank you."
+                    )
+                    st.session_state["pending_message_body"] = pre_filled_body
                     st.session_state["force_nav"] = "notifications"
                     st.rerun()
