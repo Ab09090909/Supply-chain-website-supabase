@@ -57,5 +57,6 @@ def render_producer_profile():
                     "avatar_url": avatar_url,
                 })
                 st.success("Profile updated successfully!")
+                st.rerun()  # Force rerun so the sidebar avatar refreshes
             except Exception as e:
                 st.error(f"Update failed: {e}")
