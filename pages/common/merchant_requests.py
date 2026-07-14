@@ -14,6 +14,7 @@ from auth.session import get_current_user
 from database.connection import get_supabase_client
 from utils.ui import page_header, role_badge
 from utils.helpers import format_currency, format_datetime
+from utils.db_health import is_table_available, render_db_health_warning
 
 
 def render_merchant_requests():
@@ -21,6 +22,17 @@ def render_merchant_requests():
 
     user = get_current_user()
     if not user:
+        return
+
+    # Check if the merchant_requests table exists
+    if not is_table_available("merchant_requests"):
+        st.error("❌ The `merchant_requests` table doesn't exist yet.")
+        st.info(
+            "**To fix this:** Run `supabase/migration_v4.sql` in your Supabase SQL Editor.\n\n"
+            "Go to: **Supabase Dashboard → SQL Editor → New Query** → "
+            "paste the contents of `supabase/migration_v4.sql` → click **Run**."
+        )
+        render_db_health_warning()
         return
 
     try:
@@ -33,7 +45,16 @@ def render_merchant_requests():
             .execute()
         ).data or []
     except Exception as e:
-        st.error(f"Failed to load requests: {e}")
+        err = str(e)
+        if "PGRST205" in err or "could not find" in err.lower():
+            st.error("❌ The `merchant_requests` table doesn't exist yet.")
+            st.info(
+                "**To fix this:** Run `supabase/migration_v4.sql` in your Supabase SQL Editor.\n\n"
+                "Go to: **Supabase Dashboard → SQL Editor → New Query** → "
+                "paste the contents of `supabase/migration_v4.sql` → click **Run**."
+            )
+        else:
+            st.error(f"Failed to load requests: {e}")
         return
 
     if not requests:
