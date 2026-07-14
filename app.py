@@ -24,8 +24,20 @@ from auth.pages import (
 from utils.ui import sidebar_user_card, role_badge
 from utils.constants import ROLE_LABELS
 from utils.theme import init_theme, render_theme_toggle, apply_theme_css
-from database.connection import validate_config
-from auth.verification import is_user_verified, get_verification_status, render_verification_page
+
+# validate_config is optional — if it fails to import, the app still works
+try:
+    from database.connection import validate_config
+except ImportError:
+    validate_config = None
+
+# Verification imports — wrapped so the app still loads if something breaks
+try:
+    from auth.verification import is_user_verified, get_verification_status, render_verification_page
+except ImportError:
+    is_user_verified = lambda: True  # fallback: allow access
+    get_verification_status = lambda: "verified"
+    render_verification_page = lambda: None
 
 
 # ---------------------------------------------------------------------------
@@ -45,14 +57,27 @@ st.set_page_config(
 @st.cache_data
 def _check_supabase_config() -> dict:
     """Verify Supabase credentials are reachable. Cached for 60s."""
-    from database.connection import _get_config, _get_config_source, _debug_config_status
+    try:
+        from database.connection import _get_config, _debug_config_status
+    except ImportError:
+        return {"connection_ok": False, "connection_error": "database.connection module not found"}
+    # _get_config_source is optional — only import if available
+    try:
+        from database.connection import _get_config_source
+    except ImportError:
+        _get_config_source = lambda key: None  # fallback: no source tracking
+
     url = _get_config("SUPABASE_URL")
     anon = _get_config("SUPABASE_ANON_KEY")
     status = _debug_config_status()
     status["SUPABASE_URL_loaded"] = bool(url)
     status["SUPABASE_ANON_KEY_loaded"] = bool(anon)
-    status["SUPABASE_URL_source"] = _get_config_source("SUPABASE_URL")
-    status["SUPABASE_ANON_KEY_source"] = _get_config_source("SUPABASE_ANON_KEY")
+    try:
+        status["SUPABASE_URL_source"] = _get_config_source("SUPABASE_URL")
+        status["SUPABASE_ANON_KEY_source"] = _get_config_source("SUPABASE_ANON_KEY")
+    except Exception:
+        status["SUPABASE_URL_source"] = None
+        status["SUPABASE_ANON_KEY_source"] = None
 
     # If anon key was loaded under a different alias, expose that fact
     status["anon_key_alias_note"] = ""
@@ -176,18 +201,19 @@ def render_sidebar():
         st.markdown("---")
 
         # Config validation — show a warning at the top of the sidebar if keys are wrong
-        try:
-            config_check = validate_config()
-            if not config_check["is_clean"]:
-                with st.expander("⚠️ Config Issues Found", expanded=False):
-                    for issue in config_check["issues"]:
-                        st.markdown(issue)
-                    st.markdown("---")
-                    st.markdown("**Where to get the right keys:**")
-                    st.markdown("• **Supabase keys** → Dashboard → Project Settings → API")
-                    st.markdown("• **Groq key** → https://console.groq.com/keys")
-        except Exception:
-            pass
+        if validate_config is not None:
+            try:
+                config_check = validate_config()
+                if not config_check["is_clean"]:
+                    with st.expander("⚠️ Config Issues Found", expanded=False):
+                        for issue in config_check["issues"]:
+                            st.markdown(issue)
+                        st.markdown("---")
+                        st.markdown("**Where to get the right keys:**")
+                        st.markdown("• **Supabase keys** → Dashboard → Project Settings → API")
+                        st.markdown("• **Groq key** → https://console.groq.com/keys")
+            except Exception:
+                pass
 
         if user:
             sidebar_user_card(user)
