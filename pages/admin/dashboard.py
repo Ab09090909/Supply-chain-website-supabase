@@ -59,13 +59,13 @@ def render_admin_dashboard():
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        metric_card("Total Users", str(len(users)))
+        metric_card("Total Users", str(len(users)), icon="👥")
     with col2:
-        metric_card("Products", str(len(products)))
+        metric_card("Products", str(len(products)), icon="📦")
     with col3:
-        metric_card("Total Revenue", format_currency(total_revenue))
+        metric_card("Revenue", format_currency(total_revenue), icon="💰")
     with col4:
-        metric_card("Pending Fraud Alerts", str(pending_fraud), color="#ef4444" if pending_fraud > 0 else "#10b981")
+        metric_card("Fraud Alerts", str(pending_fraud), icon="🚨", color="#ef4444" if pending_fraud > 0 else "#10b981")
 
     st.markdown("---")
     st.markdown("##### Users by Role")
