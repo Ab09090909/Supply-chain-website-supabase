@@ -31,12 +31,21 @@ def render_ai_insights():
     if not user:
         return
 
-    # ---- Model status banner ----
+    # ---- Check if ML libraries are available ----
     try:
         summary = get_training_summary()
     except Exception as e:
         st.error(f"Failed to load AI engine: {e}")
-        st.info("Make sure `pip install -r requirements.txt` ran with scikit-learn, numpy, pandas.")
+        return
+
+    if not summary.get("ml_available", True):
+        st.warning("⚠️ AI features require additional libraries that aren't installed.")
+        st.info(
+            "**To enable AI Insights:**\n\n"
+            "Add these to your `requirements.txt` on Streamlit Cloud:\n"
+            "```\npandas\nnumpy\nscikit-learn\n```\n\n"
+            "Then reboot the app. The AI features are optional — everything else works without them."
+        )
         return
 
     _render_model_status(summary)
