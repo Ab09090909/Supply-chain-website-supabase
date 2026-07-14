@@ -2,7 +2,7 @@
 # Pinned to known-good versions for Streamlit Cloud compatibility
 
 streamlit>=1.39.0,<2.0.0
-supabase>=2.7.4,<3.0.0
+supabase==2.7.4
 python-dotenv>=1.0.1
 tomli>=2.0.1; python_version < "3.11"
 pandas>=2.2.3,<3.0.0
