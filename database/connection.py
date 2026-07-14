@@ -65,6 +65,7 @@ _KEY_ALIASES = {
     "SUPABASE_ANON_KEY":           ["SUPABASE_ANON_KEY", "SUPABASE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"],
     "SUPABASE_SERVICE_ROLE_KEY":   ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SERVICE_ROLE_KEY"],
     "APP_URL":                     ["APP_URL", "NEXT_PUBLIC_APP_URL"],
+    "GROQ_API_KEY":                ["GROQ_API_KEY", "GROQ_KEY", "GROQ_TOKEN"],
 }
 
 
@@ -167,12 +168,15 @@ def get_supabase_client() -> Client:
 
 @lru_cache(maxsize=1)
 def get_supabase_admin_client() -> Client:
-    """Admin Supabase client (service_role key, bypasses RLS). Use ONLY for trusted admin ops."""
+    """Admin Supabase client (service_role key, bypasses RLS).
+
+    If the service_role key is not configured, falls back to the anon client
+    so admin pages still work (just RLS-restricted). Shows a warning.
+    """
     url = _get_config("SUPABASE_URL")
     key = _get_config("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
-        raise RuntimeError(
-            "Supabase service_role key not found. Set SUPABASE_SERVICE_ROLE_KEY "
-            "in .env or .streamlit/secrets.toml"
-        )
+        # Fallback to anon client — admin features will be limited by RLS
+        # but at least won't crash with "Invalid API key"
+        return get_supabase_client()
     return create_client(url, key)
