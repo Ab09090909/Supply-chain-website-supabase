@@ -1,43 +1,16 @@
 """
 AI Supply Chain Platform - Main Application Entry Point
 ========================================================
-Handles:
-  • Streamlit page config (must be the FIRST st.* call)
-  • Auth routing: login / signup / forgot-password / reset-password
-  • Role-based dashboards: producer / merchant / customer / admin
-  • Session management via st.session_state
+All imports are LAZY (deferred inside functions) so that:
+  • A broken import in one module doesn't crash the entire app
+  • Pages only load when the user navigates to them
+  • The theme/config check runs first, before any heavy imports
 
 Run with:  streamlit run app.py
 """
 from __future__ import annotations
 
 import streamlit as st
-
-from auth.session import is_logged_in, get_current_user, get_current_role
-from auth.pages import (
-    render_login_page,
-    render_signup_page,
-    render_forgot_password_page,
-    render_reset_password_page,
-    handle_logout,
-)
-from utils.ui import sidebar_user_card, role_badge
-from utils.constants import ROLE_LABELS
-from utils.theme import init_theme, render_theme_toggle, apply_theme_css
-
-# validate_config is optional — if it fails to import, the app still works
-try:
-    from database.connection import validate_config
-except ImportError:
-    validate_config = None
-
-# Verification imports — wrapped so the app still loads if something breaks
-try:
-    from auth.verification import is_user_verified, get_verification_status, render_verification_page
-except ImportError:
-    is_user_verified = lambda: True  # fallback: allow access
-    get_verification_status = lambda: "verified"
-    render_verification_page = lambda: None
 
 
 # ---------------------------------------------------------------------------
@@ -52,50 +25,100 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
-# 1b. SUPABASE CONFIG HEALTH CHECK (runs once at startup)
+# 2. THEME (imported early, but wrapped in try/except)
+# ---------------------------------------------------------------------------
+try:
+    from utils.theme import init_theme, render_theme_toggle, apply_theme_css
+except Exception as _theme_err:
+    init_theme = lambda: None
+    render_theme_toggle = lambda: None
+    apply_theme_css = lambda: None
+    # Show error but don't crash
+    st.error(f"Theme module failed to load: {_theme_err}")
+
+# Apply theme CSS immediately
+try:
+    init_theme()
+    apply_theme_css()
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# 3. SESSION HELPERS (lazy import)
+# ---------------------------------------------------------------------------
+def _get_auth_helpers():
+    """Lazy import of auth session helpers."""
+    try:
+        from auth.session import is_logged_in, get_current_user, get_current_role
+        return is_logged_in, get_current_user, get_current_role
+    except Exception as e:
+        st.error(f"Failed to load auth module: {e}")
+        return None, None, None
+
+
+def _get_auth_pages():
+    """Lazy import of auth page renderers."""
+    try:
+        from auth.pages import (
+            render_login_page,
+            render_signup_page,
+            render_forgot_password_page,
+            render_reset_password_page,
+            handle_logout,
+        )
+        return render_login_page, render_signup_page, render_forgot_password_page, render_reset_password_page, handle_logout
+    except Exception as e:
+        st.error(f"Failed to load auth pages: {e}")
+        return None, None, None, None, None
+
+
+def _get_verification_helpers():
+    """Lazy import of verification helpers."""
+    try:
+        from auth.verification import is_user_verified, get_verification_status, render_verification_page
+        return is_user_verified, get_verification_status, render_verification_page
+    except Exception:
+        # Fallback: allow access if verification module is broken
+        return (lambda: True), (lambda: "verified"), (lambda: None)
+
+
+# ---------------------------------------------------------------------------
+# 4. CONFIG VALIDATION (optional — won't crash if missing)
+# ---------------------------------------------------------------------------
+def _get_validate_config():
+    try:
+        from database.connection import validate_config
+        return validate_config
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 5. SUPABASE CONFIG HEALTH CHECK
 # ---------------------------------------------------------------------------
 @st.cache_data
 def _check_supabase_config() -> dict:
-    """Verify Supabase credentials are reachable. Cached for 60s."""
+    """Verify Supabase credentials are reachable. Cached."""
     try:
         from database.connection import _get_config, _debug_config_status
-    except ImportError:
-        return {"connection_ok": False, "connection_error": "database.connection module not found"}
-    # _get_config_source is optional — only import if available
-    try:
-        from database.connection import _get_config_source
-    except ImportError:
-        _get_config_source = lambda key: None  # fallback: no source tracking
-
-    url = _get_config("SUPABASE_URL")
-    anon = _get_config("SUPABASE_ANON_KEY")
-    status = _debug_config_status()
-    status["SUPABASE_URL_loaded"] = bool(url)
-    status["SUPABASE_ANON_KEY_loaded"] = bool(anon)
-    try:
-        status["SUPABASE_URL_source"] = _get_config_source("SUPABASE_URL")
-        status["SUPABASE_ANON_KEY_source"] = _get_config_source("SUPABASE_ANON_KEY")
     except Exception:
-        status["SUPABASE_URL_source"] = None
-        status["SUPABASE_ANON_KEY_source"] = None
+        return {"connection_ok": False, "connection_error": "database.connection module not found"}
 
-    # If anon key was loaded under a different alias, expose that fact
-    status["anon_key_alias_note"] = ""
-    if anon and status["SUPABASE_ANON_KEY_source"]:
-        src = status["SUPABASE_ANON_KEY_source"]
-        # _get_config_source returns e.g. st.secrets['SUPABASE_KEY']
-        if "SUPABASE_ANON_KEY" not in src:
-            status["anon_key_alias_note"] = (
-                f"Loaded from {src} (you named it differently — that's OK, "
-                "but consider renaming to SUPABASE_ANON_KEY for clarity)."
-            )
+    try:
+        url = _get_config("SUPABASE_URL")
+        anon = _get_config("SUPABASE_ANON_KEY")
+        status = _debug_config_status()
+        status["SUPABASE_URL_loaded"] = bool(url)
+        status["SUPABASE_ANON_KEY_loaded"] = bool(anon)
+    except Exception as e:
+        return {"connection_ok": False, "connection_error": str(e)}
 
     # Try a real connection test
     if url and anon:
         try:
             from supabase import create_client
             client = create_client(url, anon)
-            # Lightweight call: fetch 1 row from profiles (returns [] if empty)
             client.table("profiles").select("id").limit(1).execute()
             status["connection_ok"] = True
             status["connection_error"] = None
@@ -109,98 +132,95 @@ def _check_supabase_config() -> dict:
 
 
 def _render_config_warning(status: dict):
-    """Show a clear status banner on auth pages if config is broken."""
+    """Show a config warning banner on auth pages if config is broken."""
     if status.get("connection_ok"):
-        return  # all good, stay silent
+        return
 
     st.error("⚠️ Supabase is not configured correctly. Auth will fail until this is fixed.")
     with st.expander("🔍 Diagnostic details", expanded=True):
         st.markdown(f"""
 | Check | Status |
 |-------|--------|
-| `.env` file exists at project root | `{'✅' if status['env_file_exists'] else '❌'}` |
-| `.streamlit/secrets.toml` exists | `{'✅' if status['secrets_toml_exists'] else '❌'}` |
-| `python-dotenv` installed | `{'✅' if status['dotenv_installed'] else '❌ (pip install python-dotenv)'}` |
-| `SUPABASE_URL` loaded | `{'✅' if status['SUPABASE_URL_loaded'] else '❌'}` {('from '+status['SUPABASE_URL_source']) if status['SUPABASE_URL_source'] else ''} |
-| `SUPABASE_ANON_KEY` loaded | `{'✅' if status['SUPABASE_ANON_KEY_loaded'] else '❌'}` {('from '+status['SUPABASE_ANON_KEY_source']) if status['SUPABASE_ANON_KEY_source'] else ''} |
-| Supabase API reachable | `{'✅' if status['connection_ok'] else '❌'}` |
+| `SUPABASE_URL` loaded | `{'✅' if status.get('SUPABASE_URL_loaded') else '❌'}` |
+| `SUPABASE_ANON_KEY` loaded | `{'✅' if status.get('SUPABASE_ANON_KEY_loaded') else '❌'}` |
+| Supabase API reachable | `{'✅' if status.get('connection_ok') else '❌'}` |
 """)
-        if status.get("anon_key_alias_note"):
-            st.info("ℹ️ " + status["anon_key_alias_note"])
-
         if status.get("connection_error"):
             st.code(status["connection_error"], language="text")
 
         st.markdown("""
-**How to fix (Streamlit Cloud Secrets panel):**
-
-The exact key names my app looks for are:
-```toml
-SUPABASE_URL = "https://YOURPROJECT.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOi...your-anon-key..."
-SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOi...your-service-role-key..."
-```
-
-If you only have `SUPABASE_KEY`, that's now accepted as an alias for `SUPABASE_ANON_KEY`.
-
-**Common mistakes:**
-1. ❌ Using `SUPABASE_KEY` instead of `SUPABASE_ANON_KEY` — now accepted as alias ✅
-2. ❌ Putting the **service_role key** under `SUPABASE_ANON_KEY` — they are DIFFERENT keys. The anon key starts with `eyJhbGciOi...` and has `"role":"anon"` in its payload.
-3. ❌ Quotes around the URL — TOML allows it but make sure they're straight `"` not curly `"`.
-4. ❌ Putting secrets in a subfolder — `.streamlit/secrets.toml` must be exactly there.
-
-After editing secrets, click **Save** and wait ~1 minute for Streamlit Cloud to propagate, then reboot the app.
+**How to fix:**
+1. Make sure `.streamlit/secrets.toml` (Streamlit Cloud) or `.env` has:
+   ```
+   SUPABASE_URL=https://YOURPROJECT.supabase.co
+   SUPABASE_ANON_KEY=eyJ...your-anon-key...
+   SUPABASE_SERVICE_ROLE_KEY=eyJ...your-service-role-key...
+   GROQ_API_KEY=gsk_...your-groq-key...
+   ```
+2. `SUPABASE_SERVICE_ROLE_KEY` must start with `eyJ` (NOT `gsk_`)
+3. `GROQ_API_KEY` must start with `gsk_` (NOT `eyJ`)
+4. Restart the app after editing secrets.
 """)
 
 
-
 # ---------------------------------------------------------------------------
-# 2. QUERY-PARAM ROUTER (for auth pages: ?page=signup|forgot-password|...)
+# 6. QUERY-PARAM ROUTER (for auth pages)
 # ---------------------------------------------------------------------------
 query_page = st.query_params.get("page", "")
 
 
 def render_auth_page():
     """Route to the correct auth page based on ?page= query param."""
-    # Show config warning at top of every auth page if Supabase isn't reachable
     try:
         status = _check_supabase_config()
         _render_config_warning(status)
-    except Exception as e:
-        st.error(f"Config check failed: {e}")
+    except Exception:
+        pass
+
+    render_login, render_signup, render_forgot, render_reset, _ = _get_auth_pages()
+    if render_login is None:
+        st.error("Auth pages could not be loaded.")
+        return
 
     if query_page == "signup":
-        if render_signup_page():
+        if render_signup():
             st.query_params.clear()
             st.rerun()
     elif query_page == "forgot-password":
-        render_forgot_password_page()
+        render_forgot()
     elif query_page == "reset-password":
-        render_reset_password_page()
+        render_reset()
     else:
-        # Default = login
-        if render_login_page():
+        if render_login():
             st.query_params.clear()
             st.rerun()
 
 
 # ---------------------------------------------------------------------------
-# 3. ROLE-BASED SIDEBAR NAVIGATION
+# 7. SIDEBAR
 # ---------------------------------------------------------------------------
 def render_sidebar():
     """Render role-appropriate sidebar navigation."""
+    is_logged_in, get_current_user, get_current_role = _get_auth_helpers()
+    if not all([is_logged_in, get_current_user, get_current_role]):
+        return None
+
     user = get_current_user()
     role = get_current_role()
 
     with st.sidebar:
         st.markdown("### 📦 AI Supply Chain")
-        st.caption("Platform v3.0 · Supabase")
+        st.caption("Platform v5.0 · Supabase")
 
-        # Theme toggle (light/dark) — always at the top of the sidebar
-        render_theme_toggle()
-        st.markdown("---")
+        # Theme toggle
+        try:
+            render_theme_toggle()
+            st.markdown("---")
+        except Exception:
+            pass
 
-        # Config validation — show a warning at the top of the sidebar if keys are wrong
+        # Config validation
+        validate_config = _get_validate_config()
         if validate_config is not None:
             try:
                 config_check = validate_config()
@@ -216,32 +236,26 @@ def render_sidebar():
                 pass
 
         if user:
-            sidebar_user_card(user)
-            st.markdown("---")
+            try:
+                from utils.ui import sidebar_user_card
+                sidebar_user_card(user)
+                st.markdown("---")
+            except Exception:
+                pass
 
-            # If a "force_nav" was set (e.g. Contact Producer button),
-            # default the radio to that tab and consume the flag.
             force_nav = st.session_state.pop("force_nav", None)
-
-            # Role-specific navigation
             choice = _role_nav(role, force_nav)
 
             st.markdown("---")
-            if st.button("🚪 Logout", use_container_width=True):
+            _, _, _, _, handle_logout = _get_auth_pages()
+            if handle_logout and st.button("🚪 Logout", use_container_width=True):
                 handle_logout()
             return choice
     return None
 
 
 def _role_nav(role: str, force_nav: str | None = None) -> str | None:
-    """Returns the selected page key, or None.
-
-    Every role now gets the shared Marketplace, AI Insights, and Notifications tabs.
-    Role-specific tabs (inventory, fraud center, etc.) are added on top.
-
-    If `force_nav` is provided (e.g. 'notifications' when user clicks Contact Producer),
-    that tab will be pre-selected.
-    """
+    """Returns the selected page key."""
     common_tabs = {
         "marketplace": "🛒 Marketplace",
         "ai_insights": "🤖 AI Insights",
@@ -251,80 +265,53 @@ def _role_nav(role: str, force_nav: str | None = None) -> str | None:
     }
     if role == "producer":
         opts = ["dashboard", "inventory", "orders", "merchant_match"] + list(common_tabs.keys())
-        labels = {
-            "dashboard": "📊 Dashboard",
-            "inventory": "📦 Inventory",
-            "orders": "🛒 Orders",
-            "merchant_match": "🤝 Merchant Match",
-            **common_tabs,
-        }
+        labels = {"dashboard": "📊 Dashboard", "inventory": "📦 Inventory", "orders": "🛒 Orders", "merchant_match": "🤝 Merchant Match", **common_tabs}
         key = "producer_nav"
     elif role == "merchant":
         opts = ["dashboard", "orders", "merchant_requests"] + list(common_tabs.keys())
-        labels = {
-            "dashboard": "📊 Dashboard",
-            "orders": "🛍️ My Orders",
-            "merchant_requests": "📨 Match Requests",
-            **common_tabs,
-        }
+        labels = {"dashboard": "📊 Dashboard", "orders": "🛍️ My Orders", "merchant_requests": "📨 Match Requests", **common_tabs}
         key = "merchant_nav"
     elif role == "customer":
-        opts = ["marketplace", "cart", "orders"] + ["ai_insights", "assistant", "notifications", "profile"]
-        labels = {
-            "marketplace": "🛒 Marketplace",
-            "cart": "🛒 Cart",
-            "orders": "📦 My Orders",
-            "ai_insights": "🤖 AI Insights",
-            "assistant": "💬 AI Assistant",
-            "notifications": "🔔 Notifications",
-            "profile": "👤 Profile",
-        }
+        opts = ["marketplace", "cart", "orders", "ai_insights", "assistant", "notifications", "profile"]
+        labels = {"marketplace": "🛒 Marketplace", "cart": "🛒 Cart", "orders": "📦 My Orders", "ai_insights": "🤖 AI Insights", "assistant": "💬 AI Assistant", "notifications": "🔔 Notifications", "profile": "👤 Profile"}
         key = "customer_nav"
     elif role == "admin":
         opts = ["dashboard", "management", "fraud"] + list(common_tabs.keys())
-        labels = {
-            "dashboard": "📊 Dashboard",
-            "management": "⚙️ Management",
-            "fraud": "🚨 Fraud Center",
-            **common_tabs,
-        }
+        labels = {"dashboard": "📊 Dashboard", "management": "⚙️ Management", "fraud": "🚨 Fraud Center", **common_tabs}
         key = "admin_nav"
     else:
         return None
 
-    # If force_nav is set and is a valid option, override the current selection
     if force_nav and force_nav in opts:
         st.session_state[key] = force_nav
 
-    return st.radio(
-        "Navigation",
-        options=opts,
-        format_func=lambda x: labels[x],
-        key=key,
-        help="Choose a section to navigate to.",
-    )
+    return st.radio("Navigation", options=opts, format_func=lambda x: labels[x], key=key, help="Choose a section to navigate to.")
 
 
 # ---------------------------------------------------------------------------
-# 4. ROLE-BASED MAIN CONTENT
+# 8. ROLE-BASED CONTENT (all imports are lazy)
 # ---------------------------------------------------------------------------
 def render_role_content(choice: str | None):
+    """Render the page for the selected nav choice. All imports are lazy."""
+    is_logged_in, get_current_user, get_current_role = _get_auth_helpers()
+    if not all([is_logged_in, get_current_user, get_current_role]):
+        st.error("Session helpers not available.")
+        return
+
     role = get_current_role()
+    is_user_verified, _, _ = _get_verification_helpers()
 
     try:
         # ---- Verification gate ----
-        # Non-admin users must be verified to access anything except marketplace
-        # and their own verification page.
-        verified = is_user_verified()
+        verified = is_user_verified() if is_user_verified else True
         if not verified and choice not in ("marketplace", "profile"):
             _render_verification_gate()
             return
 
-        # ---- Shared tabs (handled first, same for every role) ----
+        # ---- Shared tabs ----
         if choice == "marketplace":
-            from pages.common import render_shared_marketplace
+            from pages.common.marketplace import render_shared_marketplace
             render_shared_marketplace()
-            # If not verified, show a banner at the bottom
             if not verified:
                 st.markdown("---")
                 st.warning("⚠️ You're browsing in **view-only mode**. Verify your account to unlock ordering, messaging, and AI features.")
@@ -332,111 +319,113 @@ def render_role_content(choice: str | None):
                     st.session_state["force_nav"] = "profile"
                     st.rerun()
             return
+
         if choice == "ai_insights":
-            from pages.common import render_ai_insights
+            from pages.common.ai_insights import render_ai_insights
             render_ai_insights()
             return
+
         if choice == "assistant":
-            from pages.common import render_ai_assistant
+            from pages.common.ai_assistant import render_ai_assistant
             render_ai_assistant()
             return
+
         if choice == "notifications":
-            from pages.common import render_notifications
+            from pages.common.notifications import render_notifications
             render_notifications()
             return
+
         if choice == "merchant_requests":
-            from pages.common import render_merchant_requests
+            from pages.common.merchant_requests import render_merchant_requests
             render_merchant_requests()
             return
 
         # ---- Role-specific tabs ----
         if role == "producer":
-            from pages.producer import (
-                render_producer_dashboard,
-                render_producer_inventory,
-                render_producer_orders,
-                render_producer_profile,
-                render_producer_merchant_match,
-            )
             if choice == "inventory":
+                from pages.producer.inventory import render_producer_inventory
                 render_producer_inventory()
             elif choice == "orders":
+                from pages.producer.orders import render_producer_orders
                 render_producer_orders()
             elif choice == "merchant_match":
+                from pages.producer.merchant_match import render_producer_merchant_match
                 render_producer_merchant_match()
             elif choice == "profile":
+                from pages.producer.profile import render_producer_profile
                 render_producer_profile()
-                # Show verification section at bottom of profile for unverified users
                 if not verified:
                     st.markdown("---")
-                    render_verification_page()
+                    _, _, render_verification_page = _get_verification_helpers()
+                    if render_verification_page:
+                        render_verification_page()
             else:
+                from pages.producer.dashboard import render_producer_dashboard
                 render_producer_dashboard()
 
         elif role == "merchant":
-            from pages.merchant import (
-                render_merchant_dashboard,
-                render_merchant_orders,
-                render_merchant_profile,
-            )
             if choice == "orders":
+                from pages.merchant.orders import render_merchant_orders
                 render_merchant_orders()
             elif choice == "merchant_requests":
-                from pages.common import render_merchant_requests
+                from pages.common.merchant_requests import render_merchant_requests
                 render_merchant_requests()
             elif choice == "profile":
+                from pages.merchant.profile import render_merchant_profile
                 render_merchant_profile()
                 if not verified:
                     st.markdown("---")
-                    render_verification_page()
+                    _, _, render_verification_page = _get_verification_helpers()
+                    if render_verification_page:
+                        render_verification_page()
             else:
+                from pages.merchant.dashboard import render_merchant_dashboard
                 render_merchant_dashboard()
 
         elif role == "customer":
-            from pages.customer import (
-                render_customer_marketplace,
-                render_customer_cart,
-                render_customer_orders,
-                render_customer_profile,
-            )
             if choice == "cart":
+                from pages.customer.cart import render_customer_cart
                 render_customer_cart()
             elif choice == "orders":
+                from pages.customer.orders import render_customer_orders
                 render_customer_orders()
             elif choice == "profile":
+                from pages.customer.profile import render_customer_profile
                 render_customer_profile()
                 if not verified:
                     st.markdown("---")
-                    render_verification_page()
+                    _, _, render_verification_page = _get_verification_helpers()
+                    if render_verification_page:
+                        render_verification_page()
             else:
-                # Default for customer = shared marketplace (now with images)
-                render_shared_marketplace_safe()
-                # If not verified, show a banner at the bottom
+                from pages.common.marketplace import render_shared_marketplace
+                render_shared_marketplace()
                 if not verified:
                     st.markdown("---")
-                    st.warning("⚠️ You're browsing in **view-only mode**. Verify your account to unlock ordering, messaging, and AI features.")
+                    st.warning("⚠️ Verify your account to unlock ordering.")
                     if st.button("🔐 Verify My Account", type="primary", use_container_width=True):
                         st.session_state["force_nav"] = "profile"
                         st.rerun()
 
         elif role == "admin":
-            from pages.admin import (
-                render_admin_dashboard,
-                render_admin_users,
-                render_admin_fraud,
-                render_admin_profile,
-            )
             if choice == "management":
                 from pages.admin.management import render_admin_management
                 render_admin_management()
             elif choice == "fraud":
+                from pages.admin.fraud import render_admin_fraud
                 render_admin_fraud()
             elif choice == "profile":
+                from pages.admin.profile import render_admin_profile
                 render_admin_profile()
             else:
+                from pages.admin.dashboard import render_admin_dashboard
                 render_admin_dashboard()
+
     except Exception as e:
         st.error(f"Failed to render page: {e}")
+        with st.expander("🔧 Error details"):
+            import traceback
+            st.code(traceback.format_exc())
 
 
 def _render_verification_gate():
@@ -447,19 +436,15 @@ def _render_verification_gate():
         "Please upload your national ID, driver's license, or business license below."
     )
     st.markdown("---")
-    render_verification_page()
+    _, _, render_verification_page = _get_verification_helpers()
+    if render_verification_page:
+        render_verification_page()
     st.markdown("---")
     st.info("💡 While you wait for verification, you can still browse the **Marketplace**.")
 
 
-def render_shared_marketplace_safe():
-    """Wrapper so the customer default route uses the shared marketplace."""
-    from pages.common import render_shared_marketplace
-    render_shared_marketplace()
-
-
 # ---------------------------------------------------------------------------
-# 5. MAIN ROUTER
+# 9. MAIN ROUTER
 # ---------------------------------------------------------------------------
 def main():
     # Initialize session_state defaults
@@ -468,13 +453,15 @@ def main():
     if "user" not in st.session_state:
         st.session_state["user"] = None
 
-    # Initialize theme (light/dark)
-    init_theme()
-    apply_theme_css()
+    # Initialize theme
+    try:
+        init_theme()
+        apply_theme_css()
+    except Exception:
+        pass
 
-    # If not logged in -> show auth page, no sidebar
-    if not is_logged_in():
-        # Hide sidebar on auth pages for a cleaner look
+    is_logged_in, _, _ = _get_auth_helpers()
+    if not is_logged_in:
         st.markdown(
             """<style>
             [data-testid="stSidebar"] { display: none; }
@@ -486,10 +473,10 @@ def main():
         render_auth_page()
         return
 
-    # Logged in -> show sidebar + role content
+    # Logged in
     choice = render_sidebar()
 
-    # If user navigated away from the marketplace, clear the product detail view
+    # Clear product detail view when navigating away from marketplace
     if choice and choice != "marketplace":
         st.session_state.pop("view_product_id", None)
 
