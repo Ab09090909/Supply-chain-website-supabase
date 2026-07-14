@@ -578,8 +578,17 @@ def main():
     except Exception:
         pass
 
-    is_logged_in, _, _ = _get_auth_helpers()
-    if not is_logged_in:
+    is_logged_in_fn, _, _ = _get_auth_helpers()
+    # Call the function to check if user is actually logged in
+    logged_in = False
+    if is_logged_in_fn:
+        try:
+            logged_in = is_logged_in_fn()
+        except Exception:
+            logged_in = False
+
+    if not logged_in:
+        # Not logged in → show login page (hide sidebar)
         st.markdown(
             """<style>
             [data-testid="stSidebar"] { display: none; }
@@ -591,6 +600,7 @@ def main():
         render_auth_page()
         return
 
+    # Logged in → show sidebar + role content
     choice = render_sidebar()
     if choice and choice != "marketplace":
         st.session_state.pop("view_product_id", None)
