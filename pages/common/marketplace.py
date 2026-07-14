@@ -110,17 +110,17 @@ def render_shared_marketplace():
 
     st.markdown(f"###### {len(filtered)} product(s) found")
 
-    # Grid of product cards — compact, modern design
+    # Grid of product cards — LARGER images for better product visibility
     cols = st.columns(3)
     for i, p in enumerate(filtered):
         with cols[i % 3]:
             with st.container(border=True):
-                # Product image — compact 100px height, rounded
+                # Product image — LARGER (180px height) for better visibility
                 image_url = p.get("image_url")
                 if image_url:
                     try:
                         st.markdown(
-                            f"<div style='height:100px; overflow:hidden; border-radius:8px; margin-bottom:0.4rem;'>"
+                            f"<div style='height:180px; overflow:hidden; border-radius:8px; margin-bottom:0.5rem;'>"
                             f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover; transition: transform 0.3s ease;' /></div>",
                             unsafe_allow_html=True,
                         )
@@ -128,9 +128,9 @@ def render_shared_marketplace():
                         st.markdown("🖼️")
                 else:
                     st.markdown(
-                        "<div style='height:100px; background:linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); border-radius:8px; "
+                        "<div style='height:180px; background:linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); border-radius:8px; "
                         "display:flex; align-items:center; justify-content:center; "
-                        "font-size:2rem; color:#94a3b8; margin-bottom:0.4rem;'>📦</div>",
+                        "font-size:3rem; color:#94a3b8; margin-bottom:0.5rem;'>📦</div>",
                         unsafe_allow_html=True,
                     )
 
