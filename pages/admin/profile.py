@@ -53,5 +53,6 @@ def render_admin_profile():
                     "avatar_url": avatar_url,
                 })
                 st.success("Profile updated!")
+                st.rerun()  # Force rerun so sidebar avatar refreshes
             except Exception as e:
                 st.error(f"Update failed: {e}")
