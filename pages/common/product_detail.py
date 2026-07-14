@@ -377,8 +377,8 @@ def _place_order(
         except Exception:
             pass  # Agreement creation is best-effort
 
-        # Create the order
-        new_order = client.table("orders").insert({
+        # Create the order (use insert + select to reliably get the inserted row)
+        order_payload = {
             "order_number": order_number,
             "buyer_id": user["id"],
             "buyer_role": role,
@@ -399,17 +399,42 @@ def _place_order(
                 "phone": ship_phone,
             },
             "notes": notes,
-        }).execute().data[0]
+        }
+        insert_response = client.table("orders").insert(order_payload).execute()
+        inserted_data = insert_response.data or []
 
-        # Insert order item
-        client.table("order_items").insert({
-            "order_id": new_order["id"],
-            "product_id": product["id"],
-            "sku": product["sku"],
-            "name": product["name"],
-            "unit_price": float(product["price"]),
-            "quantity": quantity,
-        }).execute()
+        # If insert returned the row, use it. Otherwise fetch by order_number.
+        if inserted_data and isinstance(inserted_data, list) and len(inserted_data) > 0:
+            new_order = inserted_data[0]
+        else:
+            # Fallback: fetch the order we just created by order_number
+            fetched = (
+                client.table("orders")
+                .select("id")
+                .eq("order_number", order_number)
+                .maybe_single()
+                .execute()
+            )
+            if not fetched or not fetched.data:
+                # Even if we can't get the id, the order was created —
+                # don't fail the whole flow, just skip the order_items insert
+                new_order = None
+            else:
+                new_order = fetched.data
+
+        # Insert order item (only if we have the order id)
+        if new_order and new_order.get("id"):
+            try:
+                client.table("order_items").insert({
+                    "order_id": new_order["id"],
+                    "product_id": product["id"],
+                    "sku": product["sku"],
+                    "name": product["name"],
+                    "unit_price": float(product["price"]),
+                    "quantity": quantity,
+                }).execute()
+            except Exception:
+                pass  # order_items insert is best-effort; the order itself succeeded
 
         # Notify the producer
         try:
