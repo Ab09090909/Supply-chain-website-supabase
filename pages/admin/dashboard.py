@@ -57,15 +57,11 @@ def render_admin_dashboard():
     total_revenue = sum(float(o["total"]) for o in orders if o["payment_status"] == "paid")
     pending_fraud = sum(1 for f in fraud if f["status"] == "pending")
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        metric_card("Total Users", str(len(users)), icon="👥")
-    with col2:
-        metric_card("Products", str(len(products)), icon="📦")
-    with col3:
-        metric_card("Revenue", format_currency(total_revenue), icon="💰")
-    with col4:
-        metric_card("Fraud Alerts", str(pending_fraud), icon="🚨", color="#ef4444" if pending_fraud > 0 else "#10b981")
+    # Full-width stacked metric cards
+    metric_card("Total Users", str(len(users)), icon="👥")
+    metric_card("Products", str(len(products)), icon="📦")
+    metric_card("Revenue", format_currency(total_revenue), icon="💰")
+    metric_card("Fraud Alerts", str(pending_fraud), icon="🚨", color="#ef4444" if pending_fraud > 0 else "#10b981")
 
     st.markdown("---")
     st.markdown("##### Users by Role")
