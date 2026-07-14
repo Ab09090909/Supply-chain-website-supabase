@@ -4,15 +4,33 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
+from .constants import CURRENCY_CODE, CURRENCY_SYMBOL, UNIT_SHORT
 
-def format_currency(amount: float | int | None, currency: str = "USD") -> str:
-    """Format a number as USD currency string."""
+
+def format_currency(amount, currency: str = None) -> str:
+    """Format a number as Ethiopian Birr currency string.
+
+    Examples:
+        format_currency(1234.5) -> "Br 1,234.50"
+        format_currency(None)   -> "—"
+    """
     if amount is None:
         return "—"
     try:
-        return f"${float(amount):,.2f}"
+        amt = float(amount)
+        # ETB typically doesn't use decimals for large amounts; keep 2 decimals
+        if amt == int(amt):
+            return f"{CURRENCY_SYMBOL} {int(amt):,}"
+        return f"{CURRENCY_SYMBOL} {amt:,.2f}"
     except Exception:
         return str(amount)
+
+
+def format_unit(unit: str | None) -> str:
+    """Convert a long unit label like 'kg (kilogram)' to short 'kg'."""
+    if not unit:
+        return ""
+    return UNIT_SHORT.get(unit, unit)
 
 
 def format_datetime(dt_str: str | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
@@ -20,7 +38,6 @@ def format_datetime(dt_str: str | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
     if not dt_str:
         return "—"
     try:
-        # Handle both 'Z' suffix and offset formats
         clean = dt_str.replace("Z", "+00:00")
         dt = datetime.fromisoformat(clean)
         return dt.strftime(fmt)
