@@ -109,38 +109,117 @@ def chat_with_assistant(user_message: str, chat_history: List[Dict[str, str]]) -
             "https://console.groq.com/keys"
         )
 
+    # Validate the key format (Groq keys start with 'gsk_')
+    if not api_key.startswith("gsk_"):
+        return (
+            "⚠️ Your GROQ_API_KEY doesn't look right — Groq API keys start with `gsk_`.\n\n"
+            "It looks like you may have put a Supabase key (which starts with `eyJ`) in the "
+            "GROQ_API_KEY slot. Get a valid Groq key at https://console.groq.com/keys"
+        )
+
     try:
         from groq import Groq
-
-        client = Groq(api_key=api_key)
-
-        # Build messages: system prompt + chat history + new message
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for msg in chat_history[-10:]:  # keep last 10 messages for context
-            messages.append({"role": msg["role"], "content": msg["content"]})
-        messages.append({"role": "user", "content": user_message})
-
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            max_tokens=1024,
-            temperature=0.7,
-        )
-
-        return response.choices[0].message.content or "I couldn't generate a response. Please try again."
-
     except ImportError:
-        return (
-            "⚠️ The `groq` package is not installed. Run `pip install groq` "
-            "and restart the app."
-        )
-    except Exception as e:
-        err = str(e).lower()
-        if "invalid api key" in err or "401" in err:
-            return (
-                "⚠️ Invalid Groq API key. Please check your GROQ_API_KEY in "
-                "Streamlit secrets. Get a valid key at https://console.groq.com/keys"
+        # Fallback: use requests to call Groq API directly (no package needed)
+        return _chat_with_groq_via_requests(api_key, user_message, chat_history)
+
+    # Build messages: system prompt + chat history + new message
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for msg in chat_history[-10:]:  # keep last 10 messages for context
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_message})
+
+    # Try these models in order — fall back to smaller/faster ones on rate limit
+    models_to_try = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    ]
+
+    import time
+    last_error = None
+
+    for model_name in models_to_try:
+        try:
+            client = Groq(api_key=api_key)
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                max_tokens=1024,
+                temperature=0.7,
             )
-        if "rate limit" in err or "429" in err:
-            return "⏳ Rate limit reached. Please wait a moment and try again."
-        return f"⚠️ Assistant error: {e}"
+            return response.choices[0].message.content or "I couldn't generate a response. Please try again."
+        except Exception as e:
+            last_error = e
+            err = str(e).lower()
+            # On rate limit, wait briefly and try the next (smaller) model
+            if "rate limit" in err or "429" in err or "rate_limit" in err:
+                time.sleep(1.5)
+                continue
+            # On invalid key, don't retry — just return the error
+            if "invalid api key" in err or "401" in err:
+                return (
+                    "⚠️ Invalid Groq API key. Please check your GROQ_API_KEY in "
+                    "Streamlit secrets. Get a valid key at https://console.groq.com/keys"
+                )
+            # On other errors, try the next model
+            continue
+
+    # All models failed
+    err = str(last_error) if last_error else "unknown error"
+    err_lower = err.lower()
+    if "rate limit" in err_lower or "429" in err_lower:
+        return (
+            "⏳ Groq rate limit reached on all models. The free tier has limits:\n\n"
+            "- **Requests per minute**: ~30\n"
+            "- **Tokens per minute**: ~6000\n\n"
+            "**Options:**\n"
+            "1. Wait 1-2 minutes and try again\n"
+            "2. Upgrade to Groq's paid tier at console.groq.com/billing\n"
+            "3. Use a different LLM provider (OpenAI, Anthropic)\n\n"
+            "The rate limit resets automatically — your message was NOT lost."
+        )
+    return f"⚠️ Assistant error: {err}"
+
+
+def _chat_with_groq_via_requests(api_key: str, user_message: str, chat_history: list) -> str:
+    """Call Groq API using requests (no groq package needed)."""
+    import requests
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for msg in chat_history[-10:]:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_message})
+
+    models_to_try = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    import time
+
+    for model_name in models_to_try:
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model_name,
+                    "messages": messages,
+                    "max_tokens": 1024,
+                    "temperature": 0.7,
+                },
+                timeout=30,
+            )
+            if r.status_code == 429:
+                time.sleep(1.5)
+                continue
+            if r.status_code >= 400:
+                err = r.text
+                if "invalid api key" in err.lower() or r.status_code == 401:
+                    return "⚠️ Invalid Groq API key. Check your GROQ_API_KEY in secrets."
+                continue
+            data = r.json()
+            return data["choices"][0]["message"]["content"] or "I couldn't generate a response."
+        except Exception:
+            continue
+
+    return "⏳ Groq rate limit reached. Wait a moment and try again."
