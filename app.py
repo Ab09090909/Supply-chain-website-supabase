@@ -23,6 +23,7 @@ from auth.pages import (
 )
 from utils.ui import sidebar_user_card, role_badge
 from utils.constants import ROLE_LABELS
+from utils.theme import init_theme, render_theme_toggle, apply_theme_css
 
 
 # ---------------------------------------------------------------------------
@@ -166,14 +167,22 @@ def render_sidebar():
 
     with st.sidebar:
         st.markdown("### 📦 AI Supply Chain")
-        st.caption("Platform v2.0 · Supabase")
+        st.caption("Platform v3.0 · Supabase")
+
+        # Theme toggle (light/dark) — always at the top of the sidebar
+        render_theme_toggle()
+        st.markdown("---")
 
         if user:
             sidebar_user_card(user)
             st.markdown("---")
 
+            # If a "force_nav" was set (e.g. Contact Producer button),
+            # default the radio to that tab and consume the flag.
+            force_nav = st.session_state.pop("force_nav", None)
+
             # Role-specific navigation
-            choice = _role_nav(role)
+            choice = _role_nav(role, force_nav)
 
             st.markdown("---")
             if st.button("🚪 Logout", use_container_width=True):
@@ -182,11 +191,14 @@ def render_sidebar():
     return None
 
 
-def _role_nav(role: str) -> str | None:
+def _role_nav(role: str, force_nav: str | None = None) -> str | None:
     """Returns the selected page key, or None.
 
     Every role now gets the shared Marketplace, AI Insights, and Notifications tabs.
     Role-specific tabs (inventory, fraud center, etc.) are added on top.
+
+    If `force_nav` is provided (e.g. 'notifications' when user clicks Contact Producer),
+    that tab will be pre-selected.
     """
     common_tabs = {
         "marketplace": "🛒 Marketplace",
@@ -202,7 +214,7 @@ def _role_nav(role: str) -> str | None:
             "orders": "🛒 Orders",
             **common_tabs,
         }
-        return st.radio("Navigation", options=opts, format_func=lambda x: labels[x], key="producer_nav")
+        key = "producer_nav"
     elif role == "merchant":
         opts = ["dashboard", "orders"] + list(common_tabs.keys())
         labels = {
@@ -210,7 +222,7 @@ def _role_nav(role: str) -> str | None:
             "orders": "🛍️ My Orders",
             **common_tabs,
         }
-        return st.radio("Navigation", options=opts, format_func=lambda x: labels[x], key="merchant_nav")
+        key = "merchant_nav"
     elif role == "customer":
         opts = ["marketplace", "cart", "orders"] + ["ai_insights", "notifications", "profile"]
         labels = {
@@ -221,7 +233,7 @@ def _role_nav(role: str) -> str | None:
             "notifications": "🔔 Notifications",
             "profile": "👤 Profile",
         }
-        return st.radio("Navigation", options=opts, format_func=lambda x: labels[x], key="customer_nav")
+        key = "customer_nav"
     elif role == "admin":
         opts = ["dashboard", "users", "fraud"] + list(common_tabs.keys())
         labels = {
@@ -230,8 +242,21 @@ def _role_nav(role: str) -> str | None:
             "fraud": "🚨 Fraud Center",
             **common_tabs,
         }
-        return st.radio("Navigation", options=opts, format_func=lambda x: labels[x], key="admin_nav")
-    return None
+        key = "admin_nav"
+    else:
+        return None
+
+    # If force_nav is set and is a valid option, override the current selection
+    if force_nav and force_nav in opts:
+        st.session_state[key] = force_nav
+
+    return st.radio(
+        "Navigation",
+        options=opts,
+        format_func=lambda x: labels[x],
+        key=key,
+        help="Choose a section to navigate to.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +362,10 @@ def main():
     if "user" not in st.session_state:
         st.session_state["user"] = None
 
+    # Initialize theme (light/dark)
+    init_theme()
+    apply_theme_css()
+
     # If not logged in -> show auth page, no sidebar
     if not is_logged_in():
         # Hide sidebar on auth pages for a cleaner look
@@ -353,6 +382,11 @@ def main():
 
     # Logged in -> show sidebar + role content
     choice = render_sidebar()
+
+    # If user navigated away from the marketplace, clear the product detail view
+    if choice and choice != "marketplace":
+        st.session_state.pop("view_product_id", None)
+
     render_role_content(choice)
 
 
