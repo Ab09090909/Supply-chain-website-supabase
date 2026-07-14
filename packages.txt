@@ -1,3 +1,7 @@
+# System packages required by supabase / psycopg2 / cryptography
+# Streamlit Cloud uses apt-get to install these before pip installs Python packages
 libpq-dev
 python3-dev
 build-essential
+libssl-dev
+libffi-dev
