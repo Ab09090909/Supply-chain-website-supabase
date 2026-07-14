@@ -163,6 +163,7 @@ def _render_messages(user: dict):
             )
             body = st.text_area(
                 "Message",
+                value=st.session_state.get("pending_message_body", ""),
                 height=120,
                 help="Type your message here. Be polite and specific.",
             )
@@ -184,6 +185,7 @@ def _render_messages(user: dict):
                         st.session_state.pop("pending_message_subject", None)
                         st.session_state.pop("pending_message_to", None)
                         st.session_state.pop("pending_message_to_name", None)
+                        st.session_state.pop("pending_message_body", None)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to send: {e}")
