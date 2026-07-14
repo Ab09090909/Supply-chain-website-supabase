@@ -14,6 +14,7 @@ from database.connection import get_supabase_client
 from utils.constants import (
     PRODUCT_CATEGORIES, PAYMENT_TERMS, QUALITY_GRADES,
 )
+from utils.db_health import is_table_available
 
 
 def render_preferences_section():
@@ -25,6 +26,16 @@ def render_preferences_section():
     st.markdown("---")
     st.markdown("##### ⚙️ My Preferences")
     st.caption("These preferences help us personalize your marketplace, AI recommendations, and merchant matching.")
+
+    # Check if the user_preferences table exists
+    if not is_table_available("user_preferences"):
+        st.error("❌ The `user_preferences` table doesn't exist yet.")
+        st.info(
+            "**To fix this:** Run `supabase/migration_v3.sql` in your Supabase SQL Editor.\n\n"
+            "Go to: **Supabase Dashboard → SQL Editor → New Query** → "
+            "paste the contents of `supabase/migration_v3.sql` → click **Run**."
+        )
+        return
 
     client = get_supabase_client()
 
@@ -38,7 +49,16 @@ def render_preferences_section():
             .execute()
         )
         prefs = existing.data if existing else {}
-    except Exception:
+    except Exception as e:
+        err = str(e)
+        if "PGRST205" in err or "could not find" in err.lower():
+            st.error("❌ The `user_preferences` table doesn't exist yet.")
+            st.info(
+                "**To fix this:** Run `supabase/migration_v3.sql` in your Supabase SQL Editor.\n\n"
+                "Go to: **Supabase Dashboard → SQL Editor → New Query** → "
+                "paste the contents of `supabase/migration_v3.sql` → click **Run**."
+            )
+            return
         prefs = {}
 
     role = user.get("role")
@@ -265,4 +285,13 @@ def render_preferences_section():
                 client.table("user_preferences").upsert(payload, on_conflict="user_id").execute()
                 st.success("✅ Preferences saved!")
             except Exception as e:
-                st.error(f"Failed to save preferences: {e}")
+                err = str(e)
+                if "PGRST205" in err or "could not find" in err.lower():
+                    st.error("❌ The `user_preferences` table doesn't exist yet.")
+                    st.info(
+                        "**To fix this:** Run `supabase/migration_v3.sql` in your Supabase SQL Editor.\n\n"
+                        "Go to: **Supabase Dashboard → SQL Editor → New Query** → "
+                        "paste the contents of `supabase/migration_v3.sql` → click **Run**."
+                    )
+                else:
+                    st.error(f"Failed to save preferences: {e}")
