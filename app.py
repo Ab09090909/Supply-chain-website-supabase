@@ -24,6 +24,8 @@ from auth.pages import (
 from utils.ui import sidebar_user_card, role_badge
 from utils.constants import ROLE_LABELS
 from utils.theme import init_theme, render_theme_toggle, apply_theme_css
+from database.connection import validate_config
+from auth.verification import is_user_verified, get_verification_status, render_verification_page
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +175,20 @@ def render_sidebar():
         render_theme_toggle()
         st.markdown("---")
 
+        # Config validation — show a warning at the top of the sidebar if keys are wrong
+        try:
+            config_check = validate_config()
+            if not config_check["is_clean"]:
+                with st.expander("⚠️ Config Issues Found", expanded=False):
+                    for issue in config_check["issues"]:
+                        st.markdown(issue)
+                    st.markdown("---")
+                    st.markdown("**Where to get the right keys:**")
+                    st.markdown("• **Supabase keys** → Dashboard → Project Settings → API")
+                    st.markdown("• **Groq key** → https://console.groq.com/keys")
+        except Exception:
+            pass
+
         if user:
             sidebar_user_card(user)
             st.markdown("---")
@@ -239,10 +255,10 @@ def _role_nav(role: str, force_nav: str | None = None) -> str | None:
         }
         key = "customer_nav"
     elif role == "admin":
-        opts = ["dashboard", "users", "fraud"] + list(common_tabs.keys())
+        opts = ["dashboard", "management", "fraud"] + list(common_tabs.keys())
         labels = {
             "dashboard": "📊 Dashboard",
-            "users": "👥 Users",
+            "management": "⚙️ Management",
             "fraud": "🚨 Fraud Center",
             **common_tabs,
         }
@@ -270,10 +286,25 @@ def render_role_content(choice: str | None):
     role = get_current_role()
 
     try:
+        # ---- Verification gate ----
+        # Non-admin users must be verified to access anything except marketplace
+        # and their own verification page.
+        verified = is_user_verified()
+        if not verified and choice not in ("marketplace", "profile"):
+            _render_verification_gate()
+            return
+
         # ---- Shared tabs (handled first, same for every role) ----
         if choice == "marketplace":
             from pages.common import render_shared_marketplace
             render_shared_marketplace()
+            # If not verified, show a banner at the bottom
+            if not verified:
+                st.markdown("---")
+                st.warning("⚠️ You're browsing in **view-only mode**. Verify your account to unlock ordering, messaging, and AI features.")
+                if st.button("🔐 Verify My Account", type="primary", use_container_width=True):
+                    st.session_state["force_nav"] = "profile"
+                    st.rerun()
             return
         if choice == "ai_insights":
             from pages.common import render_ai_insights
@@ -309,6 +340,10 @@ def render_role_content(choice: str | None):
                 render_producer_merchant_match()
             elif choice == "profile":
                 render_producer_profile()
+                # Show verification section at bottom of profile for unverified users
+                if not verified:
+                    st.markdown("---")
+                    render_verification_page()
             else:
                 render_producer_dashboard()
 
@@ -325,6 +360,9 @@ def render_role_content(choice: str | None):
                 render_merchant_requests()
             elif choice == "profile":
                 render_merchant_profile()
+                if not verified:
+                    st.markdown("---")
+                    render_verification_page()
             else:
                 render_merchant_dashboard()
 
@@ -341,9 +379,19 @@ def render_role_content(choice: str | None):
                 render_customer_orders()
             elif choice == "profile":
                 render_customer_profile()
+                if not verified:
+                    st.markdown("---")
+                    render_verification_page()
             else:
                 # Default for customer = shared marketplace (now with images)
                 render_shared_marketplace_safe()
+                # If not verified, show a banner at the bottom
+                if not verified:
+                    st.markdown("---")
+                    st.warning("⚠️ You're browsing in **view-only mode**. Verify your account to unlock ordering, messaging, and AI features.")
+                    if st.button("🔐 Verify My Account", type="primary", use_container_width=True):
+                        st.session_state["force_nav"] = "profile"
+                        st.rerun()
 
         elif role == "admin":
             from pages.admin import (
@@ -352,8 +400,9 @@ def render_role_content(choice: str | None):
                 render_admin_fraud,
                 render_admin_profile,
             )
-            if choice == "users":
-                render_admin_users()
+            if choice == "management":
+                from pages.admin.management import render_admin_management
+                render_admin_management()
             elif choice == "fraud":
                 render_admin_fraud()
             elif choice == "profile":
@@ -362,6 +411,19 @@ def render_role_content(choice: str | None):
                 render_admin_dashboard()
     except Exception as e:
         st.error(f"Failed to render page: {e}")
+
+
+def _render_verification_gate():
+    """Show the verification page when an unverified user tries to access a restricted page."""
+    st.warning("🔒 **Verification Required**")
+    st.markdown(
+        "You need to verify your identity before you can access this page. "
+        "Please upload your national ID, driver's license, or business license below."
+    )
+    st.markdown("---")
+    render_verification_page()
+    st.markdown("---")
+    st.info("💡 While you wait for verification, you can still browse the **Marketplace**.")
 
 
 def render_shared_marketplace_safe():
