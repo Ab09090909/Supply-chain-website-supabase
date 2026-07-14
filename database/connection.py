@@ -41,20 +41,25 @@ except ImportError:
 # 3. Supabase import — tries the real `supabase` package first, then falls
 #    back to our lightweight `supabase_lite` (pure requests, no dependencies).
 #    This eliminates ALL Streamlit Cloud dependency issues.
+#
+#    CRITICAL: The `supabase/` folder in the project root (which holds SQL files)
+#    must NOT have an __init__.py file, otherwise Python treats it as a package
+#    and `from supabase import create_client` finds the SQL folder instead of
+#    the real supabase-py package.
 try:
     from supabase import create_client, Client
-except ImportError:
+    # Verify it's the REAL supabase package, not our SQL folder
+    if not callable(create_client):
+        raise ImportError("supabase.create_client is not callable — wrong package loaded")
+except (ImportError, Exception):
     try:
         # Fallback: use our lightweight HTTP-based client (no pydantic_core etc.)
-        # Use relative import since we're inside the database package
         from .supabase_lite import create_client, Client
     except ImportError:
         try:
-            # Absolute import fallback
             from database.supabase_lite import create_client, Client
         except ImportError:
             try:
-                # Last resort: direct import (if database/ is on sys.path)
                 import sys
                 from pathlib import Path
                 sys.path.insert(0, str(Path(__file__).resolve().parent))
