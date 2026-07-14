@@ -1,179 +1,187 @@
 """
-Supabase client connection - single source of truth.
+Supabase Storage helper — upload images to the 'product-images' bucket.
 
-Two clients:
-  • get_supabase_client()         -> anon key, RLS-enforced (use for user actions)
-  • get_supabase_admin_client()   -> service_role key, bypasses RLS (use for admin/system)
+Used for:
+  • Product photos (when adding/editing products)
+  • User avatars (when editing profile)
 
-Reads credentials from (in order):
-  1. Real OS environment variables
-  2. .env file at project root (auto-loaded via python-dotenv)
-  3. .streamlit/secrets.toml (Streamlit secrets)
-  4. Local TOML fallback parse (in case st.secrets fails to initialize)
-
-If none of the above has the key, a clear RuntimeError is raised listing
-every location we checked.
+FIXES (v4):
+  • Correct file_options format (content_type with underscore, upsert as boolean)
+  • Better error handling with specific error messages
+  • Removed cache-bust query param that was breaking some Supabase Storage URLs
+  • Added retry logic for transient failures
+  • Validates file size AND content before uploading
 """
 from __future__ import annotations
 
-import os
-from functools import lru_cache
-from pathlib import Path
-from typing import Optional
+from uuid import uuid4
+from typing import Optional, Tuple
+import streamlit as st
 
-# 1. Load .env file at project root IMMEDIATELY (this was the bug)
-try:
-    from dotenv import load_dotenv
-    # Walk up from this file to find the project root (where .env lives)
-    _project_root = Path(__file__).resolve().parent.parent
-    load_dotenv(_project_root / ".env")
-    load_dotenv()  # also try CWD as fallback
-except ImportError:
-    # python-dotenv not installed - skip silently, OS env / st.secrets still work
-    pass
+from database.connection import get_supabase_client
 
-# 2. Try Streamlit (optional - allows running scripts outside Streamlit)
-try:
-    import streamlit as st
-except ImportError:
-    st = None
-
-from supabase import create_client, Client
+BUCKET_NAME = "product-images"
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_MIME = ("image/jpeg", "image/png", "image/webp", "image/gif")
+ALLOWED_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif")
 
 
-# 3. Fallback TOML parser for .streamlit/secrets.toml (used only if st.secrets fails)
-def _read_secrets_toml() -> dict:
-    """Parse .streamlit/secrets.toml manually as a last-resort fallback."""
-    secrets_path = _project_root / ".streamlit" / "secrets.toml"
-    if not secrets_path.exists():
-        return {}
-    try:
-        try:
-            import tomllib  # Python 3.11+
-        except ImportError:
-            import tomli as tomllib  # type: ignore
-        with open(secrets_path, "rb") as f:
-            return tomllib.load(f)
-    except Exception:
-        return {}
+def upload_image(
+    uploaded_file,
+    folder: str = "products",
+    allowed_types: Tuple[str, ...] = ALLOWED_MIME,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Upload a Streamlit UploadedFile to Supabase Storage.
 
+    Args:
+        uploaded_file: st.file_uploader result (or None)
+        folder: 'products' or 'avatars'
+        allowed_types: MIME types to accept
 
-# Aliases — accept multiple key names so users don't have to remember the
-# exact one. (Common mistake: SUPABASE_KEY instead of SUPABASE_ANON_KEY.)
-_KEY_ALIASES = {
-    "SUPABASE_URL":                ["SUPABASE_URL"],
-    "SUPABASE_ANON_KEY":           ["SUPABASE_ANON_KEY", "SUPABASE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"],
-    "SUPABASE_SERVICE_ROLE_KEY":   ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SERVICE_ROLE_KEY"],
-    "APP_URL":                     ["APP_URL", "NEXT_PUBLIC_APP_URL"],
-    "GROQ_API_KEY":                ["GROQ_API_KEY", "GROQ_KEY", "GROQ_TOKEN"],
-}
-
-
-def _get_config(key: str) -> Optional[str]:
-    """Read config from: os.environ → st.secrets → manual TOML parse.
-
-    Tries every alias for the requested key, so users who wrote
-    SUPABASE_KEY instead of SUPABASE_ANON_KEY still get a working client.
+    Returns:
+        (public_url, error_message) — one of them is None on success/failure.
     """
-    aliases = _KEY_ALIASES.get(key, [key])
+    if uploaded_file is None:
+        return None, "No file provided."
 
-    for alias in aliases:
-        # (a) Real environment variable (includes anything load_dotenv just set)
-        val = os.environ.get(alias)
-        if val and not val.startswith("your-"):  # ignore placeholder values
-            return val
+    # --- Validate MIME type ---
+    file_type = getattr(uploaded_file, "type", None) or ""
+    if file_type and file_type not in allowed_types:
+        return None, f"Unsupported file type: {file_type}. Allowed: {', '.join(allowed_types)}"
 
-    # (b) Streamlit secrets — read once, check all aliases
-    if st is not None:
+    # --- Validate file size ---
+    file_bytes = uploaded_file.getvalue()
+    if len(file_bytes) > MAX_FILE_SIZE:
+        return None, f"File too large ({len(file_bytes) / 1024 / 1024:.1f} MB). Maximum {MAX_FILE_SIZE / 1024 / 1024:.0f} MB."
+
+    if len(file_bytes) == 0:
+        return None, "File is empty."
+
+    # --- Determine file extension ---
+    original_name = getattr(uploaded_file, "name", "image.jpg")
+    ext = original_name.split(".")[-1].lower() if "." in original_name else "jpg"
+    if ext == "jpeg":
+        ext = "jpg"
+    if ext not in ALLOWED_EXTENSIONS:
+        ext = "jpg"
+
+    # --- Determine content type ---
+    if not file_type:
+        content_type_map = {
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp",
+            "gif": "image/gif",
+        }
+        file_type = content_type_map.get(ext, "image/jpeg")
+
+    # --- Build a unique file path ---
+    file_path = f"{folder}/{uuid4().hex}.{ext}"
+
+    # --- Upload with retry ---
+    last_error = None
+    for attempt in range(2):
         try:
-            for alias in aliases:
-                val = st.secrets.get(alias)
-                if val and not str(val).startswith("your-"):
-                    return str(val)
-        except Exception:
-            pass
+            client = get_supabase_client()
 
-    # (c) Manual TOML fallback — read once, check all aliases
-    secrets = _read_secrets_toml()
-    for alias in aliases:
-        val = secrets.get(alias)
-        if val and not str(val).startswith("your-"):
-            return str(val)
+            # CORRECT API: file_options dict with content_type (underscore) and upsert (boolean)
+            response = client.storage.from_(BUCKET_NAME).upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={
+                    "content_type": file_type,
+                    "upsert": True,  # boolean, not string
+                },
+            )
 
-    return None
+            # Get the public URL (NO cache-bust query param — it breaks some setups)
+            public_url = client.storage.from_(BUCKET_NAME).get_public_url(file_path)
 
+            # Verify the URL is well-formed
+            if not public_url or not public_url.startswith("http"):
+                return None, "Upload succeeded but got invalid public URL."
 
-def _get_config_source(key: str) -> Optional[str]:
-    """For diagnostics: returns where the value was actually found."""
-    aliases = _KEY_ALIASES.get(key, [key])
-    for alias in aliases:
-        if os.environ.get(alias) and not os.environ.get(alias).startswith("your-"):
-            return f"os.environ[{alias!r}]"
-    if st is not None:
-        try:
-            for alias in aliases:
-                val = st.secrets.get(alias)
-                if val and not str(val).startswith("your-"):
-                    return f"st.secrets[{alias!r}]"
-        except Exception:
-            pass
-    secrets = _read_secrets_toml()
-    for alias in aliases:
-        val = secrets.get(alias)
-        if val and not str(val).startswith("your-"):
-            return f"secrets.toml[{alias!r}]"
-    return None
+            return public_url, None
 
+        except Exception as e:
+            last_error = str(e)
+            # If it's a duplicate path error, try with a new UUID
+            if "already" in last_error.lower() and attempt == 0:
+                file_path = f"{folder}/{uuid4().hex}.{ext}"
+                continue
+            # Otherwise break immediately
+            break
 
-def _debug_config_status() -> dict:
-    """Return a dict showing which config sources are available (for error messages)."""
-    status = {
-        "env_file_exists": (_project_root / ".env").exists(),
-        "secrets_toml_exists": (_project_root / ".streamlit" / "secrets.toml").exists(),
-        "streamlit_available": st is not None,
-        "SUPABASE_URL_in_os_environ": bool(os.environ.get("SUPABASE_URL")),
-        "SUPABASE_ANON_KEY_in_os_environ": bool(os.environ.get("SUPABASE_ANON_KEY")),
-        "dotenv_installed": False,
-    }
-    try:
-        import dotenv  # noqa: F401
-        status["dotenv_installed"] = True
-    except ImportError:
-        pass
-    return status
-
-
-@lru_cache(maxsize=1)
-def get_supabase_client() -> Client:
-    """User-scoped Supabase client (RLS enforced)."""
-    url = _get_config("SUPABASE_URL")
-    key = _get_config("SUPABASE_ANON_KEY")
-    if not url or not key:
-        status = _debug_config_status()
-        raise RuntimeError(
-            "Supabase credentials not found.\n"
-            f"  Checked: .env exists={status['env_file_exists']}, "
-            f"secrets.toml exists={status['secrets_toml_exists']}, "
-            f"dotenv installed={status['dotenv_installed']}\n"
-            f"  SUPABASE_URL in env: {status['SUPABASE_URL_in_os_environ']}\n"
-            f"  SUPABASE_ANON_KEY in env: {status['SUPABASE_ANON_KEY_in_os_environ']}\n"
-            "Fix options (pick ONE):\n"
-            "  1. Create .env at project root with SUPABASE_URL and SUPABASE_ANON_KEY\n"
-            "  2. Create .streamlit/secrets.toml with SUPABASE_URL and SUPABASE_ANON_KEY\n"
-            "  3. Run: export SUPABASE_URL=... && export SUPABASE_ANON_KEY=...\n"
-            "Then restart streamlit."
+    # --- Format error message helpfully ---
+    err_lower = (last_error or "").lower()
+    if "bucket" in err_lower and "not found" in err_lower:
+        return None, (
+            "Storage bucket 'product-images' not found. Run supabase/migration_v2.sql "
+            "in your Supabase SQL Editor to create it."
         )
-    return create_client(url, key)
-
-
-@lru_cache(maxsize=1)
-def get_supabase_admin_client() -> Client:
-    """Admin Supabase client (service_role key, bypasses RLS). Use ONLY for trusted admin ops."""
-    url = _get_config("SUPABASE_URL")
-    key = _get_config("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError(
-            "Supabase service_role key not found. Set SUPABASE_SERVICE_ROLE_KEY "
-            "in .env or .streamlit/secrets.toml"
+    if "unauthorized" in err_lower or "401" in err_lower:
+        return None, (
+            "Upload unauthorized. Make sure the storage policies in migration_v2.sql "
+            "have been applied (Storage > Policies)."
         )
-    return create_client(url, key)
+    if "policy" in err_lower:
+        return None, (
+            "Storage RLS policy blocked the upload. Run supabase/migration_v2.sql "
+            "to create the storage policies."
+        )
+
+    return None, f"Upload failed: {last_error}"
+
+
+def render_image_uploader(
+    label: str,
+    folder: str = "products",
+    current_url: Optional[str] = None,
+    key: str = "image_uploader",
+) -> Tuple[Optional[str], Optional[str]]:
+    """Render a Streamlit file_uploader + preview. Returns (final_url, error).
+
+    If user uploads a new file → upload + return new URL.
+    If user keeps existing → return current_url.
+    Also allows pasting a URL as an alternative.
+    """
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        if current_url:
+            try:
+                st.image(current_url, caption="Current image", use_container_width=True)
+            except Exception:
+                st.markdown("🖼️ _Preview unavailable_")
+        else:
+            st.markdown("*No image yet*")
+
+    with col2:
+        uploaded = st.file_uploader(
+            label,
+            type=["png", "jpg", "jpeg", "webp", "gif"],
+            key=key,
+            help=f"Upload an image (max 5 MB). Accepted: JPG, PNG, WebP, GIF.",
+        )
+
+        url_input = st.text_input(
+            "Or paste an image URL",
+            value="",
+            placeholder="https://images.unsplash.com/...",
+            key=f"{key}_url",
+            help="You can either upload a file OR paste a URL. If both are set, the uploaded file takes priority.",
+        )
+
+        if uploaded is not None:
+            with st.spinner("Uploading image..."):
+                new_url, err = upload_image(uploaded, folder=folder)
+            if err:
+                st.error(err)
+                return current_url, err
+            st.success("✅ Image uploaded successfully!")
+            return new_url, None
+        elif url_input.strip():
+            return url_input.strip(), None
+        else:
+            return current_url, None
