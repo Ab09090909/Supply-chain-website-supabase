@@ -1,12 +1,11 @@
 """
-Shared UI helpers — modern, compact, full-width stacked card design.
+Shared UI helpers — modern horizontal grid card design.
 
-Design principles (matching reference):
-  • Full-width stacked cards (not grid columns)
-  • Icon on left + label + value in compact rows
-  • Larger product images for better visibility
-  • 12px padding, 8px radius, subtle borders
-  • Clear visual hierarchy: title → subtitle → stat cards
+Design (matching reference):
+  • Horizontal grid of cards (3-4 per row)
+  • Each card: gradient icon + large number + small label
+  • Compact 120px height, 12px radius
+  • Clean white cards on light background
 """
 from __future__ import annotations
 
@@ -40,24 +39,75 @@ def role_badge(role: str) -> str:
     )
 
 
-def metric_card(label: str, value: str, delta: str = "", color: str = "#10b981", icon: str = "") -> None:
-    """Render a full-width stat card — icon on left, label + value on right.
+# Gradient color schemes for metric cards
+GRADIENTS = {
+    "emerald": "linear-gradient(135deg, #34d399 0%, #10b981 100%)",
+    "blue": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+    "purple": "linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)",
+    "amber": "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
+    "red": "linear-gradient(135deg, #f87171 0%, #ef4444 100%)",
+    "teal": "linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%)",
+    "pink": "linear-gradient(135deg, #f472b6 0%, #ec4899 100%)",
+    "indigo": "linear-gradient(135deg, #818cf8 0%, #6366f1 100%)",
+}
 
-    Matches the reference: horizontal layout, icon + text, compact height.
+# Map icons to gradient colors
+ICON_GRADIENTS = {
+    "📦": "emerald",
+    "⚠️": "amber",
+    "💰": "emerald",
+    "⏳": "amber",
+    "👥": "blue",
+    "🚨": "red",
+    "📜": "purple",
+    "🛒": "teal",
+    "📈": "indigo",
+    "🎯": "pink",
+    "🤝": "blue",
+    "📨": "purple",
+    "✅": "emerald",
+    "❌": "red",
+    "🔄": "blue",
+    "🚚": "purple",
+}
+
+
+def metric_card(label: str, value: str, delta: str = "", color: str = "#10b981", icon: str = "") -> None:
+    """Render a horizontal grid metric card — gradient icon + large number + small label.
+
+    Matches the reference: compact card with gradient circular icon,
+    large bold number, small uppercase label.
     """
-    delta_html = f"<div style='font-size:0.7rem; color:#10b981; margin-top:0.15rem; font-weight:500;'>{delta}</div>" if delta else ""
-    icon_html = f"<div style='font-size:1.3rem; line-height:1; width:32px; text-align:center;'>{icon}</div>" if icon else ""
+    delta_html = f"<div style='font-size:0.65rem; color:#10b981; margin-top:0.15rem; font-weight:500;'>{delta}</div>" if delta else ""
+
+    # Get gradient for the icon
+    gradient_name = ICON_GRADIENTS.get(icon, "emerald")
+    gradient = GRADIENTS.get(gradient_name, GRADIENTS["emerald"])
+
+    # Icon HTML — circular gradient background with emoji
+    icon_html = ""
+    if icon:
+        icon_html = f"""
+        <div style='width:36px; height:36px; border-radius:50%;
+                    background:{gradient}; display:flex; align-items:center;
+                    justify-content:center; font-size:1rem; margin-bottom:0.4rem;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.1);'>
+            {icon}
+        </div>
+        """
+
     st.markdown(
         f"""
-        <div style='padding:0.7rem 0.875rem; border-radius:8px; background:#ffffff;
-                    border:1px solid #e5e7eb; box-shadow:0 1px 2px rgba(0,0,0,0.03);
-                    display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;
-                    transition: all 0.2s ease;'>
+        <div style='padding:0.875rem; border-radius:12px; background:#ffffff;
+                    border:1px solid #e5e7eb; box-shadow:0 1px 3px rgba(0,0,0,0.04);
+                    text-align:left; transition: all 0.2s ease;
+                    min-height:110px; display:flex; flex-direction:column;
+                    justify-content:space-between;'>
             {icon_html}
-            <div style='flex:1; min-width:0;'>
+            <div>
+                <div style='font-size:1.5rem; font-weight:700; color:#0f172a; line-height:1.1; margin-bottom:0.1rem;'>{value}</div>
                 <div style='font-size:0.7rem; color:#6b7280; text-transform:uppercase;
-                            letter-spacing:0.03em; font-weight:500;'>{label}</div>
-                <div style='font-size:1.15rem; font-weight:700; color:{color}; line-height:1.2; margin-top:0.05rem;'>{value}</div>
+                            letter-spacing:0.03em; font-weight:500; line-height:1.2;'>{label}</div>
                 {delta_html}
             </div>
         </div>
@@ -67,24 +117,8 @@ def metric_card(label: str, value: str, delta: str = "", color: str = "#10b981",
 
 
 def stat_card(label: str, value: str, color: str = "#10b981", icon: str = "") -> None:
-    """Render a compact stat card with colored left accent."""
-    icon_html = f"<div style='font-size:1.2rem; line-height:1; width:28px; text-align:center;'>{icon}</div>" if icon else ""
-    st.markdown(
-        f"""
-        <div style='padding:0.6rem 0.8rem; border-radius:8px; background:#ffffff;
-                    border-left:3px solid {color}; border-top:1px solid #e5e7eb;
-                    border-right:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb;
-                    box-shadow:0 1px 2px rgba(0,0,0,0.03); margin-bottom:0.4rem;
-                    display:flex; align-items:center; gap:0.6rem;'>
-            {icon_html}
-            <div style='flex:1;'>
-                <div style='font-size:0.7rem; color:#6b7280; font-weight:500;'>{label}</div>
-                <div style='font-size:1.1rem; font-weight:700; color:#0f172a; line-height:1.2;'>{value}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """Render a compact stat card — alias for metric_card."""
+    metric_card(label, value, color=color, icon=icon)
 
 
 def sidebar_user_card(user: dict) -> None:
@@ -133,16 +167,23 @@ def sidebar_user_card(user: dict) -> None:
 
 
 def compact_info_card(icon: str, title: str, value: str, description: str = "", color: str = "#10b981") -> None:
-    """Render a full-width info card with icon + title + value + description."""
+    """Render a full-width info card with icon + title + value."""
+    gradient_name = ICON_GRADIENTS.get(icon, "emerald")
+    gradient = GRADIENTS.get(gradient_name, GRADIENTS["emerald"])
     st.markdown(
         f"""
-        <div style='padding:0.7rem 0.875rem; border-radius:8px; background:#ffffff;
-                    border:1px solid #e5e7eb; box-shadow:0 1px 2px rgba(0,0,0,0.03);
-                    display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;'>
-            <div style='font-size:1.3rem; line-height:1; width:32px; text-align:center;'>{icon}</div>
+        <div style='padding:0.875rem; border-radius:12px; background:#ffffff;
+                    border:1px solid #e5e7eb; box-shadow:0 1px 3px rgba(0,0,0,0.04);
+                    display:flex; align-items:center; gap:0.875rem; margin-bottom:0.5rem;'>
+            <div style='width:40px; height:40px; border-radius:50%;
+                        background:{gradient}; display:flex; align-items:center;
+                        justify-content:center; font-size:1.2rem; flex-shrink:0;
+                        box-shadow:0 2px 8px rgba(0,0,0,0.1);'>
+                {icon}
+            </div>
             <div style='flex:1; min-width:0;'>
-                <div style='font-size:0.7rem; color:#6b7280; font-weight:500;'>{title}</div>
-                <div style='font-size:1.1rem; font-weight:700; color:{color}; line-height:1.2;'>{value}</div>
+                <div style='font-size:0.7rem; color:#6b7280; font-weight:500; text-transform:uppercase; letter-spacing:0.03em;'>{title}</div>
+                <div style='font-size:1.2rem; font-weight:700; color:#0f172a; line-height:1.2;'>{value}</div>
                 {f"<div style='font-size:0.7rem; color:#9ca3af; margin-top:0.1rem;'>{description}</div>" if description else ""}
             </div>
         </div>
