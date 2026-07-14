@@ -54,11 +54,16 @@ def render_producer_dashboard():
     total_revenue = sum(float(o["total"]) for o in orders if o["payment_status"] == "paid")
     pending_orders = sum(1 for o in orders if o["status"] == "pending")
 
-    # Full-width stacked metric cards (matching reference design)
-    metric_card("Total Products", str(total_products), icon="📦")
-    metric_card("Low Stock", str(low_stock), icon="⚠️", color="#ef4444" if low_stock > 0 else "#10b981")
-    metric_card("Revenue", format_currency(total_revenue), icon="💰")
-    metric_card("Pending Orders", str(pending_orders), icon="⏳")
+    # Horizontal grid of metric cards (4 per row) — matching reference design
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        metric_card("Total Products", str(total_products), icon="📦")
+    with col2:
+        metric_card("Low Stock", str(low_stock), icon="⚠️", color="#ef4444" if low_stock > 0 else "#10b981")
+    with col3:
+        metric_card("Revenue", format_currency(total_revenue), icon="💰")
+    with col4:
+        metric_card("Pending Orders", str(pending_orders), icon="⏳")
 
     st.markdown("---")
 
