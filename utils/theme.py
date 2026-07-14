@@ -155,10 +155,29 @@ a:hover { text-decoration: underline !important; }
     color: #10b981 !important;
 }
 .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span {
-    color: #cbd5e1 !important;
+    color: #e2e8f0 !important;
 }
 h1, h2, h3, h4, h5, h6 {
-    color: #f1f5f9 !important;
+    color: #f8fafc !important;
+}
+/* Inline code — make it visible on dark background */
+.stMarkdown code, .stMarkdown p code, .stMarkdown li code, code {
+    background: #334155 !important;
+    color: #6ee7b7 !important;
+    padding: 0.15em 0.4em !important;
+    border-radius: 4px !important;
+    font-size: 0.9em !important;
+}
+/* Code blocks — dark background with readable text */
+.stCode, pre, .stCodeBlock {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+}
+.stCode code, pre code {
+    color: #e2e8f0 !important;
+    background: transparent !important;
 }
 .auth-card {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
@@ -166,11 +185,12 @@ h1, h2, h3, h4, h5, h6 {
     box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important;
     border: 1px solid #334155 !important;
 }
-.auth-title { color: #f1f5f9 !important; }
+.auth-title { color: #f8fafc !important; }
 .auth-subtitle { color: #94a3b8 !important; }
 .role-card {
     background: rgba(15, 23, 42, 0.8) !important;
     border-color: #334155 !important;
+    color: #e2e8f0 !important;
 }
 [data-testid="stMetric"] {
     background: rgba(30, 41, 59, 0.6) !important;
@@ -178,40 +198,99 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 12px !important;
     border: 1px solid #334155 !important;
 }
-[data-testid="stMetricLabel"] { color: #94a3b8 !important; }
-[data-testid="stMetricValue"] { color: #10b981 !important; }
+[data-testid="stMetricLabel"] { color: #cbd5e1 !important; }
+[data-testid="stMetricValue"] { color: #34d399 !important; }
+[data-testid="stMetricDelta"] { color: #94a3b8 !important; }
+/* Expander — make content fully visible */
 .stExpander {
-    background: rgba(30, 41, 59, 0.6) !important;
+    background: rgba(30, 41, 59, 0.8) !important;
     border: 1px solid #334155 !important;
     border-radius: 12px !important;
+    color: #e2e8f0 !important;
+}
+.stExpander details, .stExpander summary {
+    color: #e2e8f0 !important;
+}
+.stExpander p, .stExpander li, .stExpander span {
+    color: #e2e8f0 !important;
+}
+/* Tables inside expanders / markdown */
+.stMarkdown table, .stMarkdown th, .stMarkdown td {
+    color: #e2e8f0 !important;
+}
+.stMarkdown th {
+    background: #334155 !important;
+    color: #6ee7b7 !important;
+}
+.stMarkdown td {
+    background: rgba(30, 41, 59, 0.5) !important;
+    color: #e2e8f0 !important;
 }
 .stTabs [data-baseweb="tab-list"] { background: transparent !important; gap: 4px !important; }
 .stTabs [data-baseweb="tab"] {
     background: rgba(30, 41, 59, 0.5) !important;
-    color: #94a3b8 !important;
+    color: #cbd5e1 !important;
     border-radius: 8px 8px 0 0 !important;
     border-bottom: 3px solid transparent !important;
 }
 .stTabs [data-baseweb="tab"][aria-selected="true"] {
     background: rgba(16, 185, 129, 0.15) !important;
-    color: #10b981 !important;
+    color: #34d399 !important;
     border-bottom-color: #10b981 !important;
 }
 ::-webkit-scrollbar-thumb { background: #475569 !important; }
-.stCode {
-    background: #0f172a !important;
-    border: 1px solid #334155 !important;
-    border-radius: 8px !important;
-}
 .stAlert {
     border-radius: 10px !important;
     animation: fadeInUp 0.3s ease-out !important;
 }
+/* Form labels — make them clearly visible */
 .stTextArea > div > label,
 .stTextInput > div > label,
 .stNumberInput > div > label,
-.stSelectbox > div > label {
-    color: #cbd5e1 !important;
+.stSelectbox > div > label,
+.stCheckbox > label,
+.stRadio > label,
+.stFileUploader > div > label {
+    color: #e2e8f0 !important;
+}
+/* Text inside text areas and inputs */
+.stTextArea > div > div > textarea,
+.stTextInput > div > div > input,
+.stNumberInput > div > div > input {
+    color: #f1f5f9 !important;
+}
+.stTextArea > div > div > textarea::placeholder,
+.stTextInput > div > div > input::placeholder {
+    color: #64748b !important;
+}
+/* Selectbox text */
+.stSelectbox > div > div > div {
+    color: #f1f5f9 !important;
+}
+/* Data editor cells */
+.stDataFrame td, .stDataFrame [data-testid="stDataFrameResizable"] {
+    color: #e2e8f0 !important;
+}
+/* Captions */
+.stCaption, .stMarkdown .stCaption {
+    color: #94a3b8 !important;
+}
+/* Links */
+a {
+    color: #34d399 !important;
+}
+a:hover {
+    color: #6ee7b7 !important;
+}
+/* Toast notifications */
+[data-testid="stToast"] {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155 !important;
+}
+/* Spinner */
+.stSpinner > div {
+    border-color: #10b981 transparent transparent transparent !important;
 }
 </style>"""
         _inject_css(animations_css + dark_css)
