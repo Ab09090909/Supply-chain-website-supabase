@@ -40,11 +40,11 @@ def render_merchant_dashboard():
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        metric_card("Total Spent", format_currency(total_spent))
+        metric_card("Total Spent", format_currency(total_spent), icon="💰")
     with col2:
-        metric_card("Open Orders", str(pending))
+        metric_card("Open Orders", str(pending), icon="📦")
     with col3:
-        metric_card("Active Agreements", str(active_agreements))
+        metric_card("Agreements", str(active_agreements), icon="📜")
 
     st.markdown("---")
     st.markdown("##### Recent Orders")
