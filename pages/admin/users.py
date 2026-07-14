@@ -4,9 +4,10 @@ from __future__ import annotations
 import streamlit as st
 
 from auth.session import get_current_user
-from database.connection import get_supabase_admin_client
+from database.connection import get_supabase_admin_client, get_supabase_client
 from utils.ui import page_header, role_badge
 from utils.helpers import format_datetime
+from utils.db_health import render_db_health_warning
 
 
 def render_admin_users():
@@ -16,11 +17,30 @@ def render_admin_users():
     if not user:
         return
 
+    # Try admin client first; fall back to anon client (RLS-limited)
     try:
         client = get_supabase_admin_client()
+    except Exception:
+        client = get_supabase_client()
+
+    try:
         users = client.table("profiles").select("*").order("created_at", desc=True).execute().data or []
     except Exception as e:
-        st.error(f"Failed to load users: {e}")
+        err = str(e)
+        if "401" in err or "Invalid API key" in err or "invalid api key" in err.lower():
+            st.error("❌ Admin access failed: Invalid Supabase API key.")
+            st.info(
+                "**To fix this:** Check your Supabase credentials in Streamlit secrets.\n\n"
+                "The User Management page needs the **service_role key** (`SUPABASE_SERVICE_ROLE_KEY`) "
+                "to see all users. Without it, RLS restricts you to seeing only your own profile.\n\n"
+                "Get the service_role key from: **Supabase Dashboard → Project Settings → API**"
+            )
+        elif "PGRST205" in err or "could not find" in err.lower():
+            st.error("❌ Database tables are missing.")
+            st.info("Run `supabase/schema.sql` in your Supabase SQL Editor first.")
+            render_db_health_warning()
+        else:
+            st.error(f"Failed to load users: {e}")
         return
 
     # Filters
