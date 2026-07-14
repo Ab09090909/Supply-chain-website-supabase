@@ -1,4 +1,4 @@
-"""Merchant profile page."""
+"""Merchant profile page — now with avatar image upload."""
 from __future__ import annotations
 
 import streamlit as st
@@ -6,6 +6,7 @@ import streamlit as st
 from auth.session import get_current_user
 from database.connection import get_supabase_client
 from utils.ui import page_header
+from utils.storage import render_image_uploader
 
 
 def render_merchant_profile():
@@ -14,6 +15,17 @@ def render_merchant_profile():
     user = get_current_user()
     if not user:
         return
+
+    # ---- Avatar image upload (NEW) ----
+    st.markdown("##### Profile Photo")
+    avatar_url, avatar_err = render_image_uploader(
+        label="Upload new avatar",
+        folder="avatars",
+        current_url=user.get("avatar_url"),
+        key="avatar_uploader_merchant",
+    )
+
+    st.markdown("---")
 
     with st.form("merchant_profile_form"):
         col1, col2 = st.columns(2)
@@ -34,12 +46,14 @@ def render_merchant_profile():
                     "phone": phone,
                     "location": location,
                     "company": company,
+                    "avatar_url": avatar_url,
                 }).eq("id", user["id"]).execute()
                 st.session_state["user"].update({
                     "full_name": full_name,
                     "phone": phone,
                     "location": location,
                     "company": company,
+                    "avatar_url": avatar_url,
                 })
                 st.success("Profile updated!")
             except Exception as e:
