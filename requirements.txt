@@ -1,11 +1,14 @@
-streamlit>=1.39.0
-supabase>=2.7.4
+# AI Supply Chain Platform - Python Dependencies
+# Pinned to known-good versions for Streamlit Cloud compatibility
+
+streamlit>=1.39.0,<2.0.0
+supabase>=2.7.4,<3.0.0
 python-dotenv>=1.0.1
 tomli>=2.0.1; python_version < "3.11"
-pandas>=2.2.3
-numpy>=1.26.4
-scikit-learn>=1.5.2
+pandas>=2.2.3,<3.0.0
+numpy>=1.26.4,<2.0.0
+scikit-learn>=1.5.2,<2.0.0
 Pillow>=10.4.0
-pydantic>=2.9.2
+pydantic>=2.9.2,<3.0.0
 email-validator>=2.2.0
 groq>=0.11.0
