@@ -63,23 +63,42 @@ def stat_card(label: str, value: str, color: str = "#10b981") -> None:
 
 
 def sidebar_user_card(user: dict) -> None:
-    """Render a user info card in the sidebar."""
+    """Render a user info card in the sidebar — shows the avatar image if set."""
     name = user.get("full_name", "User")
     email = user.get("email", "")
     role = user.get("role", "")
+    avatar_url = user.get("avatar_url")
+
+    # If avatar URL is set, show the image; otherwise show initials circle
+    if avatar_url:
+        avatar_html = (
+            f"<img src='{avatar_url}' "
+            f"style='width:40px; height:40px; border-radius:50%; object-fit:cover; "
+            f"border:2px solid {ROLE_COLORS.get(role, '#64748b')};' />"
+        )
+    else:
+        avatar_html = (
+            f"<div style='width:40px; height:40px; border-radius:50%;"
+            f"background:{ROLE_COLORS.get(role, '#64748b')};"
+            f"color:white; display:flex; align-items:center; justify-content:center;"
+            f"font-weight:700; font-size:1rem;'>"
+            f"{name[0].upper() if name else 'U'}</div>"
+        )
+
     st.markdown(
         f"""
         <div style='padding:1rem; border-radius:12px; background:#f8fafc; margin-bottom:1rem;'>
             <div style='display:flex; align-items:center; gap:0.75rem;'>
-                <div style='width:40px; height:40px; border-radius:50%;
-                            background:{ROLE_COLORS.get(role, '#64748b')};
-                            color:white; display:flex; align-items:center; justify-content:center;
-                            font-weight:700; font-size:1rem;'>
-                    {name[0].upper() if name else 'U'}
-                </div>
-                <div>
-                    <div style='font-weight:600; color:#0f172a; font-size:0.95rem;'>{name}</div>
-                    <div style='font-size:0.75rem; color:#64748b;'>{email}</div>
+                {avatar_html}
+                <div style='min-width:0; flex:1;'>
+                    <div style='font-weight:600; color:#0f172a; font-size:0.95rem;
+                                white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>
+                        {name}
+                    </div>
+                    <div style='font-size:0.75rem; color:#64748b;
+                                white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>
+                        {email}
+                    </div>
                 </div>
             </div>
             <div style='margin-top:0.75rem;'>{role_badge(role)}</div>
