@@ -25,6 +25,9 @@ def render_notifications():
     if not user:
         return
 
+    # If the user arrived here from a "Contact Producer" button, default to Messages tab
+    default_tab_idx = 1 if st.session_state.get("pending_message_to") else 0
+
     if role == "admin":
         sub1, sub2, sub3 = st.tabs(["🔔 Notifications", "💬 Messages", "📣 Broadcast"])
         with sub1:
@@ -39,6 +42,13 @@ def render_notifications():
             _render_notification_list(user)
         with sub2:
             _render_messages(user)
+
+    # Show a banner if a message was queued from the marketplace
+    if st.session_state.get("pending_message_to_name"):
+        st.info(
+            f"💬 Sending a message to **{st.session_state['pending_message_to_name']}** — "
+            f"use the Messages tab above. Subject pre-filled."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +141,31 @@ def _render_messages(user: dict):
         st.markdown("###### ✉️ Send a Message")
         with st.form("send_message_form"):
             receiver_options = {f"{u['full_name']} ({u['email']})": u["id"] for u in all_users}
-            receiver_label = st.selectbox("To", list(receiver_options.keys()))
-            subject = st.text_input("Subject", value=st.session_state.get("pending_message_subject", ""))
-            body = st.text_area("Message", height=120)
+            # Pre-select the receiver if we came from "Contact Producer"
+            pending_to = st.session_state.get("pending_message_to")
+            default_idx = 0
+            if pending_to:
+                labels = list(receiver_options.keys())
+                for i, (label, uid) in enumerate(receiver_options.items()):
+                    if uid == pending_to:
+                        default_idx = i
+                        break
+            receiver_label = st.selectbox(
+                "To",
+                list(receiver_options.keys()),
+                index=default_idx,
+                help="Select the user you want to send a message to.",
+            )
+            subject = st.text_input(
+                "Subject",
+                value=st.session_state.get("pending_message_subject", ""),
+                help="A short title describing the message topic.",
+            )
+            body = st.text_area(
+                "Message",
+                height=120,
+                help="Type your message here. Be polite and specific.",
+            )
             submitted = st.form_submit_button("Send", type="primary")
 
             if submitted:
@@ -148,7 +180,10 @@ def _render_messages(user: dict):
                             "body": body,
                         }).execute()
                         st.success("Message sent!")
+                        # Clear pending state
                         st.session_state.pop("pending_message_subject", None)
+                        st.session_state.pop("pending_message_to", None)
+                        st.session_state.pop("pending_message_to_name", None)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to send: {e}")
