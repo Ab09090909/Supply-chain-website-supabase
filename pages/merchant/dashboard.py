@@ -38,13 +38,10 @@ def render_merchant_dashboard():
     pending = sum(1 for o in orders if o["status"] in ("pending", "processing"))
     active_agreements = sum(1 for a in agreements if a["status"] == "active")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        metric_card("Total Spent", format_currency(total_spent), icon="💰")
-    with col2:
-        metric_card("Open Orders", str(pending), icon="📦")
-    with col3:
-        metric_card("Agreements", str(active_agreements), icon="📜")
+    # Full-width stacked metric cards
+    metric_card("Total Spent", format_currency(total_spent), icon="💰")
+    metric_card("Open Orders", str(pending), icon="📦")
+    metric_card("Agreements", str(active_agreements), icon="📜")
 
     st.markdown("---")
     st.markdown("##### Recent Orders")
