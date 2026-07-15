@@ -145,7 +145,11 @@ def sign_up(
         if not profile_data:
             return False, "Signup failed - profile could not be created."
 
-        set_session(response.session.access_token, profile_data)
+        set_session(
+            response.session.access_token,
+            profile_data,
+            refresh_token=response.session.refresh_token,
+        )
         return True, "Signup successful."
     except Exception as e:
         msg = str(e)
@@ -193,7 +197,11 @@ def sign_in(email: str, password: str) -> Tuple[bool, str]:
         except Exception:
             pass
 
-        set_session(response.session.access_token, profile_data)
+        set_session(
+            response.session.access_token,
+            profile_data,
+            refresh_token=response.session.refresh_token,
+        )
         return True, "Login successful."
     except Exception as e:
         msg = str(e).lower()
