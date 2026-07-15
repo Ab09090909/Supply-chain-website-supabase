@@ -293,7 +293,7 @@ def _render_order_card(order: dict, producer: dict):
             st.dataframe(
                 [{"SKU": it["sku"], "Name": it["name"], "Qty": it["quantity"],
                   "Unit Price": format_currency(it["unit_price"]),
-                  "Subtotal": format_currency(it["subtotal"])} for it in items],
+                  "Subtotal": format_currency(it["unit_price"] * it["quantity"])} for it in items],
                 use_container_width=True, hide_index=True,
             )
 
