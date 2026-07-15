@@ -130,6 +130,40 @@ class SupabaseAuth:
             return None
         return r.json()
 
+    def refresh_session(self, refresh_token: str) -> Optional[dict]:
+        """Exchange a refresh_token for a new access_token.
+
+        Returns a dict with the new access_token / refresh_token / expires_at
+        on success, or None on failure. Used by callers when the JWT has
+        expired (HTTP 401 + "JWT expired") and they want to silently
+        retry the failed request without forcing the user to log in again.
+
+        The Supabase endpoint is:
+          POST /auth/v1/token?grant_type=refresh_token
+        with body ``{"refresh_token": "..."}``.
+        """
+        if not refresh_token:
+            return None
+        try:
+            r = requests.post(
+                f"{self.url}/auth/v1/token?grant_type=refresh_token",
+                headers=self._headers(),
+                json={"refresh_token": refresh_token},
+                timeout=30,
+            )
+            if r.status_code >= 400:
+                return None
+            data = r.json()
+            # Update our local token cache so subsequent calls in the
+            # same request use the fresh token.
+            if data.get("access_token"):
+                self._access_token = data["access_token"]
+            if data.get("refresh_token"):
+                self._refresh_token = data["refresh_token"]
+            return data
+        except Exception:
+            return None
+
 
 class _AuthResponse:
     """Mimics the supabase-py auth response object."""
@@ -393,7 +427,51 @@ class _StorageBucket:
             # any bucket with `allowed_mime_types` configured.
             headers["Content-Type"] = "image/jpeg"
         r = requests.post(url, headers=headers, data=file, timeout=60)
+
+        # If the JWT expired, try a one-shot silent refresh and retry.
+        # We only do this for "JWT expired" — other 401s (wrong apikey,
+        # missing storage policies) are not retried, they're surfaced.
+        if r.status_code == 401 and self._client._is_jwt_expired_response(r):
+            refresh_token = None
+            try:
+                import streamlit as _st
+                refresh_token = _st.session_state.get("refresh_token")
+            except Exception:
+                pass
+            if refresh_token and self._client.auth.refresh_session(refresh_token):
+                # Update session_state with the new tokens
+                try:
+                    import streamlit as _st
+                    if self._client.auth._access_token:
+                        _st.session_state["access_token"] = self._client.auth._access_token
+                    if self._client.auth._refresh_token:
+                        _st.session_state["refresh_token"] = self._client.auth._refresh_token
+                except Exception:
+                    pass
+                # Retry the upload with fresh headers
+                headers = self._client._headers()
+                headers.pop("Content-Type", None)
+                if file_options:
+                    headers["Content-Type"] = content_type
+                    upsert = file_options.get("upsert", file_options.get("x-upsert"))
+                    if upsert is True or str(upsert).lower() == "true":
+                        headers["x-upsert"] = "true"
+                else:
+                    headers["Content-Type"] = "image/jpeg"
+                r = requests.post(url, headers=headers, data=file, timeout=60)
+                if r.status_code >= 400:
+                    raise Exception(r.text)
+                return r.json() if r.text else {}
+
         if r.status_code >= 400:
+            # Mark the session as having a JWT-expired error so app.py
+            # can show a "please log in again" banner.
+            if r.status_code == 401 and self._client._is_jwt_expired_response(r):
+                try:
+                    import streamlit as _st
+                    _st.session_state["_jwt_expired"] = True
+                except Exception:
+                    pass
             raise Exception(r.text)
         return r.json() if r.text else {}
 
@@ -512,6 +590,16 @@ class SupabaseClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
+
+    def _is_jwt_expired_response(self, response: requests.Response) -> bool:
+        """Return True if the response body indicates the JWT expired."""
+        try:
+            body = (response.text or "").lower()
+        except Exception:
+            return False
+        if response.status_code != 401:
+            return False
+        return "jwt expired" in body or "invalid jwt" in body
 
     def table(self, name: str) -> _QueryBuilder:
         return _QueryBuilder(self, name)
