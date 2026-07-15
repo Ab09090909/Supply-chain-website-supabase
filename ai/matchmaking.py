@@ -144,9 +144,9 @@ def find_best_merchant_matches(producer_id: str, top_n: int = 10) -> List[Dict[s
                     payment_score = 0.8
 
             # --- Location proximity (5%) ---
-            producer = None
+            producer_profile = None
             try:
-                producer = (
+                producer_profile = (
                     client.table("profiles")
                     .select("location")
                     .eq("id", producer_id)
@@ -155,7 +155,7 @@ def find_best_merchant_matches(producer_id: str, top_n: int = 10) -> List[Dict[s
                 ).data
             except Exception:
                 pass
-            p_location = (producer or {}).get("location", "") or ""
+            p_location = (producer_profile or {}).get("location", "") or ""
             m_location = merchant.get("location", "") or ""
             if p_location and m_location:
                 # Simple: same city/region = full score, same country = partial
