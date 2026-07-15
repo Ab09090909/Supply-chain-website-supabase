@@ -168,6 +168,7 @@ class _QueryBuilder:
         self._limit_val: Optional[int] = None
         self._order_col: Optional[str] = None
         self._order_desc: bool = False
+        self._single: bool = False
 
     def select(self, cols: str = "*"):
         self._select_cols = cols
@@ -198,6 +199,10 @@ class _QueryBuilder:
         return self
 
     def in_(self, column: str, values: list):
+        if not values:
+            # Empty list — add an impossible filter so the query returns nothing
+            self._filters.append(f"{column}=eq.__EMPTY_LIST__")
+            return self
         vals = ",".join(_format_value(v) for v in values)
         self._filters.append(f"{column}=in.({vals})")
         return self
@@ -374,7 +379,11 @@ def _format_value(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, str):
-        return v.replace('"', "")
+        # PostgREST requires string values to be enclosed in double quotes
+        # if they contain special characters (commas, parentheses, spaces, etc.)
+        # For safety, always quote string values for PostgREST filters.
+        escaped = v.replace('"', '\\"')
+        return f'"{escaped}"'
     return str(v)
 
 
