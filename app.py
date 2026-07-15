@@ -412,8 +412,8 @@ def _role_nav(role: str, force_nav: str | None = None) -> str | None:
         labels = {"dashboard": "📊 Dashboard", "orders": "🛍️ My Orders", "merchant_requests": "📨 Match Requests", **common_tabs}
         key = "merchant_nav"
     elif role == "customer":
-        opts = ["marketplace", "cart", "orders", "ai_insights", "assistant", "notifications", "profile"]
-        labels = {"marketplace": "🛒 Marketplace", "cart": "🛒 Cart", "orders": "📦 My Orders", "ai_insights": "🤖 AI Insights", "assistant": "💬 AI Assistant", "notifications": "🔔 Notifications", "profile": "👤 Profile"}
+        opts = ["dashboard", "marketplace", "cart", "orders", "ai_insights", "assistant", "notifications", "profile"]
+        labels = {"dashboard": "📊 Dashboard", "marketplace": "🛒 Marketplace", "cart": "🛒 Cart", "orders": "📦 My Orders", "ai_insights": "🤖 AI Insights", "assistant": "💬 AI Assistant", "notifications": "🔔 Notifications", "profile": "👤 Profile"}
         key = "customer_nav"
     elif role == "admin":
         opts = ["dashboard", "management", "fraud"] + list(common_tabs.keys())
@@ -527,7 +527,10 @@ def render_role_content(choice: str | None):
                 render_merchant_dashboard()
 
         elif role == "customer":
-            if choice == "cart":
+            if choice == "dashboard":
+                from pages.customer.dashboard import render_customer_dashboard
+                render_customer_dashboard()
+            elif choice == "cart":
                 from pages.customer.cart import render_customer_cart
                 render_customer_cart()
             elif choice == "orders":
