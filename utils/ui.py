@@ -71,9 +71,9 @@ def page_header(title: str, subtitle: str = "") -> None:
     st.markdown(
         f"""
         <div style='margin-bottom: 1rem; padding: 0.5rem 0;'>
-            <h1 style='font-size: 1.5rem; font-weight: 700; color: {COLORS["slate_900"]};
+            <h1 style='font-size: 1.5rem; font-weight: 700; color: {COLORS['slate_900']};
                        margin: 0; line-height: 1.2; letter-spacing: -0.01em;'>{title}</h1>
-            {f"<p style='color: {COLORS["slate_500"]}; font-size: 0.875rem; margin: 0.25rem 0 0 0;'>{subtitle}</p>" if subtitle else ""}
+            {f"<p style='color: {COLORS['slate_500']}; font-size: 0.875rem; margin: 0.25rem 0 0 0;'>{subtitle}</p>" if subtitle else ""}
         </div>
         """,
         unsafe_allow_html=True,
@@ -102,7 +102,7 @@ def metric_card(label: str, value: str, delta: str = "", color: str = "#10b981",
 
     Designed for horizontal grid layout (3-4 cards per row).
     """
-    delta_html = f"<div style='font-size:0.65rem; color:{COLORS["primary"]}; margin-top:0.15rem; font-weight:600;'>{delta}</div>" if delta else ""
+    delta_html = f"<div style='font-size:0.65rem; color:{COLORS['primary']}; margin-top:0.15rem; font-weight:600;'>{delta}</div>" if delta else ""
 
     gradient_name = ICON_GRADIENTS.get(icon, "emerald")
     gradient = GRADIENTS.get(gradient_name, GRADIENTS["emerald"])
@@ -216,7 +216,7 @@ def compact_info_card(icon: str, title: str, value: str, description: str = "", 
                 <div style='font-size:0.7rem; color:{COLORS["slate_500"]}; font-weight:600;
                             text-transform:uppercase; letter-spacing:0.04em;'>{title}</div>
                 <div style='font-size:1.2rem; font-weight:700; color:{COLORS["slate_900"]}; line-height:1.2;'>{value}</div>
-                {f"<div style='font-size:0.7rem; color:{COLORS["slate_400"]}; margin-top:0.1rem;'>{description}</div>" if description else ""}
+                {f"<div style='font-size:0.7rem; color:{COLORS['slate_400']}; margin-top:0.1rem;'>{description}</div>" if description else ""}
             </div>
         </div>
         """,
