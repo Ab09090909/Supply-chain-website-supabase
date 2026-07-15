@@ -7,6 +7,8 @@ from auth.session import get_current_user
 from database.connection import get_supabase_client
 from utils.ui import page_header
 from utils.helpers import format_currency, format_datetime
+from utils.tracking_ui import render_buyer_tracking
+from utils.invoice_ui import render_invoice_button
 
 
 def render_customer_orders():
@@ -33,6 +35,22 @@ def render_customer_orders():
         st.info("You haven't placed any orders yet.")
         return
 
+    # Pre-fetch the seller info (one query) for the invoice button
+    seller_ids = list({o.get("seller_id") for o in orders if o.get("seller_id")})
+    seller_map: dict = {}
+    if seller_ids:
+        try:
+            sellers = (
+                client.table("profiles")
+                .select("id, full_name, company, email, phone, location")
+                .in_("id", seller_ids)
+                .execute()
+            ).data or []
+            for s in sellers:
+                seller_map[s["id"]] = s
+        except Exception:
+            pass
+
     for o in orders:
         with st.container(border=True):
             col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
@@ -58,3 +76,10 @@ def render_customer_orders():
                     }
                     for it in items
                 ], use_container_width=True, hide_index=True)
+
+            # Tracking + invoice row
+            seller = seller_map.get(o.get("seller_id"), {})
+            with st.expander(f"📦 Tracking & invoice — {o['order_number']}", expanded=False):
+                render_buyer_tracking(o["id"])
+                st.markdown("---")
+                render_invoice_button(o, user, seller)
