@@ -38,7 +38,7 @@ def render_shared_marketplace():
         client = get_supabase_client()
         products = (
             client.table("products")
-            .select("*, profiles!products_producer_id_fkey(full_name, email, role, avatar_url)")
+            .select("*, profiles!products_producer_id_fkey(id, full_name, email, role, avatar_url, phone, company)")
             .eq("status", "active")
             .order("created_at", desc=True)
             .execute()
