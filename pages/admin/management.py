@@ -174,16 +174,44 @@ def _render_user_management_panel(u: dict, admin: dict):
                 doc_status = doc.get("status", "pending")
                 st.markdown(f"**Status:** {doc_status.title()}")
             with col3:
-                # Preview the document
+                # Preview the document. The file_url is the *path* inside
+                # the verification-docs bucket (a PRIVATE bucket), so the
+                # public URL we stored at upload time is a 404. We need a
+                # signed URL for the preview to actually work.
                 file_url = doc.get("file_url")
-                if file_url:
+                if not file_url:
+                    st.caption("No file URL")
+                else:
+                    # file_url is a public-storage URL like
+                    # "https://xxx.supabase.co/storage/v1/object/public/verification-docs/{user}/{uuid}.jpg"
+                    # Extract the path inside the bucket (everything after /verification-docs/)
+                    preview_url = None
+                    try:
+                        marker = "/verification-docs/"
+                        idx = file_url.find(marker)
+                        if idx >= 0:
+                            bucket_path = file_url[idx + len(marker):]
+                            # Use the admin client to create a signed URL.
+                            try:
+                                admin_storage = get_supabase_admin_client().storage
+                                preview_url = admin_storage.from_("verification-docs").create_signed_url(
+                                    bucket_path, expires_in=300
+                                )
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    if not preview_url:
+                        # Fall back to the stored public URL (will 404 on
+                        # private buckets but at least gives a clickable link).
+                        preview_url = file_url
                     if doc.get("mime_type", "").startswith("image/"):
                         try:
-                            st.image(file_url, caption="Document preview", width=200)
+                            st.image(preview_url, caption="Document preview", width=200)
                         except Exception:
-                            st.markdown(f"📄 [View document]({file_url})")
+                            st.markdown(f"📄 [View document]({preview_url})")
                     else:
-                        st.markdown(f"📄 [View document]({file_url})")
+                        st.markdown(f"📄 [View document]({preview_url})")
 
             # Approve / Reject buttons for the document
             col_a, col_b, col_c = st.columns(3)
