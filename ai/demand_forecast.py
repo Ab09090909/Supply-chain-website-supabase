@@ -1,5 +1,5 @@
 """
-Demand forecast module â€” predicts future demand for each product.
+Demand forecast module — predicts future demand for each product.
 
 Returns BOTH the forecast and the historical fit so the UI can plot a
 per-product chart of actuals vs fitted vs future forecast.
@@ -89,7 +89,7 @@ def forecast_demand(product_id: str, horizon_days: int = 30) -> Dict[str, Any]:
     ]
 
     # Confidence: combine sample count with past accuracy (MAPE).
-    # Lower MAPE â†’ higher confidence. If no metrics yet, fall back to
+    # Lower MAPE → higher confidence. If no metrics yet, fall back to
     # the in-sample MAE heuristic.
     accuracy = engine.get_accuracy(product_id_str, "demand_forecast")
     sample_conf = min(0.5, m_info["samples"] / 50)
