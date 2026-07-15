@@ -1,9 +1,8 @@
 """
-Theme toggle — dark/light mode + global animations for the whole app.
+Theme system — modern, professional, attractive.
 
-v5 fix: Uses st.html() instead of st.markdown(unsafe_allow_html=True)
-to properly inject CSS without it showing as raw text on the page.
-Also makes verification lenient — if the column doesn't exist, allow access.
+Light mode: clean white + emerald accents + subtle shadows
+Dark mode: deep navy + glassmorphism + emerald highlights
 """
 from __future__ import annotations
 
@@ -11,23 +10,19 @@ import streamlit as st
 
 
 def init_theme():
-    """Initialize theme state. Call once at app startup."""
     if "app_theme" not in st.session_state:
         st.session_state["app_theme"] = "light"
 
 
 def render_theme_toggle():
-    """Render a light/dark toggle in the sidebar using st.toggle."""
     init_theme()
     current = st.session_state.get("app_theme", "light")
-
     is_dark = st.toggle(
-        "🌙 Dark Mode" if not (current == "dark") else "☀️ Light Mode",
+        "🌙 Dark Mode" if current != "dark" else "☀️ Light Mode",
         value=(current == "dark"),
         key="theme_toggle_widget",
         help="Switch between light and dark mode.",
     )
-
     new_theme = "dark" if is_dark else "light"
     if new_theme != current:
         st.session_state["app_theme"] = new_theme
@@ -35,33 +30,21 @@ def render_theme_toggle():
 
 
 def _inject_css(css: str):
-    """Inject CSS into the page using the safest method available.
-
-    Tries st.html() first (Streamlit 1.33+), falls back to st.markdown.
-    """
     try:
-        # st.html() is the proper way in Streamlit 1.33+
-        # It doesn't render the <style> tag as visible text
         st.html(css)
     except AttributeError:
-        # Fallback for older Streamlit versions
-        # Wrap in a hidden div to prevent the <style> tag from showing as text
-        st.markdown(
-            f'<div style="display:none">{css}</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div style="display:none">{css}</div>', unsafe_allow_html=True)
 
 
 def apply_theme_css():
-    """Inject CSS for the current theme + global animations."""
     init_theme()
     theme = st.session_state.get("app_theme", "light")
 
-    # Global animations CSS (applies to both themes)
-    animations_css = """<style>
-/* ===== GLOBAL ANIMATIONS ===== */
+    # Global styles — modern, professional
+    global_css = """<style>
+/* ===== GLOBAL ===== */
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(10px); }
+    from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
 }
 @keyframes fadeIn {
@@ -69,15 +52,15 @@ def apply_theme_css():
     to { opacity: 1; }
 }
 @keyframes slideInLeft {
-    from { opacity: 0; transform: translateX(-15px); }
+    from { opacity: 0; transform: translateX(-12px); }
     to { opacity: 1; transform: translateX(0); }
 }
 
 .stApp > div > div > div {
-    animation: fadeInUp 0.3s ease-out;
+    animation: fadeInUp 0.25s ease-out;
 }
 
-/* Smooth transitions on interactive elements */
+/* Smooth transitions */
 .stButton > button,
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
@@ -90,89 +73,110 @@ def apply_theme_css():
 /* Modern buttons */
 .stButton > button {
     border-radius: 8px !important;
-    font-size: 0.82rem !important;
-    font-weight: 600 !important;
-    padding: 0.42rem 1rem !important;
-    letter-spacing: 0.01em !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    padding: 0.45rem 1rem !important;
+    border: 1px solid transparent !important;
 }
 .stButton > button:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.22) !important;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2) !important;
+}
+.stButton > button:active {
+    transform: translateY(0) !important;
 }
 
-/* Compact containers — less padding, no stray borders */
+/* Primary button type */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    border: none !important;
+    color: white !important;
+}
+
+/* Compact containers */
 [data-testid="stVerticalBlock"] > div {
     padding: 0.25rem 0 !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
 }
 
-/* Explicit border containers keep their border; everything else is clean */
-.stContainer {
-    gap: 0.5rem !important;
-}
-
-/* Only containers explicitly rendered with border=True get a border */
-[data-testid="stVerticalBlockBorderWrapper"] {
-    border-radius: 14px !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
-    overflow: hidden !important;
-    padding: 0 !important;
-}
-
+/* Sidebar animation */
 [data-testid="stSidebar"] {
     animation: slideInLeft 0.3s ease-out !important;
 }
 
+/* Tab transitions */
 .stTabs [data-baseweb="tab-panel"] {
     animation: fadeIn 0.2s ease-out !important;
 }
 
+/* Image styling */
 .stImage img {
     transition: transform 0.3s ease !important;
     border-radius: 8px !important;
 }
 
-/* Compact metric values */
+/* Compact metrics */
 [data-testid="stMetricValue"] {
     font-size: 1.5rem !important;
+    font-weight: 700 !important;
 }
 [data-testid="stMetricLabel"] {
     font-size: 0.75rem !important;
+    font-weight: 500 !important;
 }
 
-/* Compact captions */
+/* Captions */
 .stCaption {
     font-size: 0.75rem !important;
 }
 
-/* Compact markdown headings */
-.stMarkdown h1 { font-size: 1.5rem !important; }
-.stMarkdown h2 { font-size: 1.25rem !important; }
-.stMarkdown h3 { font-size: 1.1rem !important; }
-.stMarkdown h4 { font-size: 1rem !important; }
-.stMarkdown h5 { font-size: 0.9rem !important; }
-.stMarkdown h6 { font-size: 0.85rem !important; }
+/* Headings — professional hierarchy */
+.stMarkdown h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: -0.01em !important; }
+.stMarkdown h2 { font-size: 1.25rem !important; font-weight: 700 !important; }
+.stMarkdown h3 { font-size: 1.1rem !important; font-weight: 600 !important; }
+.stMarkdown h4 { font-size: 1rem !important; font-weight: 600 !important; }
+.stMarkdown h5 { font-size: 0.9rem !important; font-weight: 600 !important; }
+.stMarkdown h6 { font-size: 0.85rem !important; font-weight: 600 !important; }
 
-/* Compact dataframes */
+/* Dataframes */
 .stDataFrame {
     font-size: 0.8rem !important;
 }
+.stDataFrame th {
+    font-weight: 600 !important;
+}
 
+/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+/* Links */
 a { transition: color 0.2s ease !important; }
 a:hover { text-decoration: underline !important; }
+
+/* Form submit button */
+.stFormSubmitButton > button {
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+
+/* Expander */
+.stExpander {
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+
+/* Alerts */
+.stAlert {
+    border-radius: 10px !important;
+    animation: fadeInUp 0.25s ease-out !important;
+}
 </style>"""
 
     if theme == "dark":
         dark_css = """<style>
-/* ===== DARK MODE ===== */
+/* ===== DARK MODE — Deep navy + glassmorphism ===== */
 .stApp, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
     color: #e2e8f0 !important;
@@ -182,24 +186,20 @@ a:hover { text-decoration: underline !important; }
     color: #e2e8f0 !important;
     border-right: 1px solid #334155 !important;
 }
-[data-testid="stVerticalBlock"] > div {
-    background: transparent !important;
+[data-testid="stVerticalBlock"] > div,
+.stContainer > div {
+    background: rgba(30, 41, 59, 0.6) !important;
     color: #e2e8f0 !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-[data-testid="stVerticalBlockBorderWrapper"] {
-    background: rgba(30, 41, 59, 0.85) !important;
     border: 1px solid #334155 !important;
-    border-radius: 14px !important;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(10px) !important;
 }
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
 .stNumberInput > div > div > input,
 .stSelectbox > div > div > div {
-    background: rgba(15, 23, 42, 0.9) !important;
-    color: #e2e8f0 !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: #f1f5f9 !important;
     border: 1px solid #334155 !important;
     border-radius: 8px !important;
 }
@@ -209,20 +209,19 @@ a:hover { text-decoration: underline !important; }
     box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
 }
 .stDataFrame, .stDataFrame table, .stDataFrame th, .stDataFrame td {
-    background: rgba(30, 41, 59, 0.9) !important;
+    background: rgba(30, 41, 59, 0.8) !important;
     color: #e2e8f0 !important;
 }
 .stDataFrame th {
     background: #334155 !important;
-    color: #10b981 !important;
+    color: #34d399 !important;
 }
 .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span {
-    color: #e2e8f0 !important;
+    color: #cbd5e1 !important;
 }
 h1, h2, h3, h4, h5, h6 {
     color: #f8fafc !important;
 }
-/* Inline code — make it visible on dark background */
 .stMarkdown code, .stMarkdown p code, .stMarkdown li code, code {
     background: #334155 !important;
     color: #6ee7b7 !important;
@@ -230,8 +229,7 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 4px !important;
     font-size: 0.9em !important;
 }
-/* Code blocks — dark background with readable text */
-.stCode, pre, .stCodeBlock {
+.stCode, pre {
     background: #0f172a !important;
     color: #e2e8f0 !important;
     border: 1px solid #334155 !important;
@@ -260,14 +258,11 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 12px !important;
     border: 1px solid #334155 !important;
 }
-[data-testid="stMetricLabel"] { color: #cbd5e1 !important; }
+[data-testid="stMetricLabel"] { color: #94a3b8 !important; }
 [data-testid="stMetricValue"] { color: #34d399 !important; }
-[data-testid="stMetricDelta"] { color: #94a3b8 !important; }
-/* Expander — make content fully visible */
 .stExpander {
-    background: rgba(30, 41, 59, 0.8) !important;
+    background: rgba(30, 41, 59, 0.6) !important;
     border: 1px solid #334155 !important;
-    border-radius: 12px !important;
     color: #e2e8f0 !important;
 }
 .stExpander details, .stExpander summary {
@@ -276,7 +271,6 @@ h1, h2, h3, h4, h5, h6 {
 .stExpander p, .stExpander li, .stExpander span {
     color: #e2e8f0 !important;
 }
-/* Tables inside expanders / markdown */
 .stMarkdown table, .stMarkdown th, .stMarkdown td {
     color: #e2e8f0 !important;
 }
@@ -286,7 +280,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 .stMarkdown td {
     background: rgba(30, 41, 59, 0.5) !important;
-    color: #e2e8f0 !important;
 }
 .stTabs [data-baseweb="tab-list"] { background: transparent !important; gap: 4px !important; }
 .stTabs [data-baseweb="tab"] {
@@ -301,11 +294,7 @@ h1, h2, h3, h4, h5, h6 {
     border-bottom-color: #10b981 !important;
 }
 ::-webkit-scrollbar-thumb { background: #475569 !important; }
-.stAlert {
-    border-radius: 10px !important;
-    animation: fadeInUp 0.3s ease-out !important;
-}
-/* Form labels — make them clearly visible */
+.stAlert { border-radius: 10px !important; }
 .stTextArea > div > label,
 .stTextInput > div > label,
 .stNumberInput > div > label,
@@ -315,50 +304,25 @@ h1, h2, h3, h4, h5, h6 {
 .stFileUploader > div > label {
     color: #e2e8f0 !important;
 }
-/* Text inside text areas and inputs */
-.stTextArea > div > div > textarea,
-.stTextInput > div > div > input,
-.stNumberInput > div > div > input {
-    color: #f1f5f9 !important;
-}
-.stTextArea > div > div > textarea::placeholder,
-.stTextInput > div > div > input::placeholder {
-    color: #64748b !important;
-}
-/* Selectbox text */
 .stSelectbox > div > div > div {
     color: #f1f5f9 !important;
 }
-/* Data editor cells */
-.stDataFrame td, .stDataFrame [data-testid="stDataFrameResizable"] {
-    color: #e2e8f0 !important;
-}
-/* Captions */
-.stCaption, .stMarkdown .stCaption {
-    color: #94a3b8 !important;
-}
-/* Links */
-a {
-    color: #34d399 !important;
-}
-a:hover {
-    color: #6ee7b7 !important;
-}
-/* Toast notifications */
+.stCaption { color: #94a3b8 !important; }
+a { color: #34d399 !important; }
+a:hover { color: #6ee7b7 !important; }
 [data-testid="stToast"] {
     background: #1e293b !important;
     color: #e2e8f0 !important;
     border: 1px solid #334155 !important;
 }
-/* Spinner */
 .stSpinner > div {
     border-color: #10b981 transparent transparent transparent !important;
 }
 </style>"""
-        _inject_css(animations_css + dark_css)
+        _inject_css(global_css + dark_css)
     else:
         light_css = """<style>
-/* ===== LIGHT MODE ===== */
+/* ===== LIGHT MODE — Clean white + emerald ===== */
 .stApp {
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
 }
@@ -367,16 +331,12 @@ a:hover {
     border-right: 1px solid #e2e8f0 !important;
     box-shadow: 2px 0 8px rgba(0,0,0,0.03) !important;
 }
-[data-testid="stVerticalBlock"] > div {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-[data-testid="stVerticalBlockBorderWrapper"] {
+[data-testid="stVerticalBlock"] > div,
+.stContainer > div {
     background: #ffffff !important;
     border: 1px solid #e2e8f0 !important;
-    border-radius: 14px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
 }
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
@@ -422,9 +382,6 @@ a:hover {
     color: #047857 !important;
     border-bottom-color: #10b981 !important;
 }
-.stAlert {
-    border-radius: 10px !important;
-    animation: fadeInUp 0.3s ease-out !important;
-}
+.stAlert { border-radius: 10px !important; }
 </style>"""
-        _inject_css(animations_css + light_css)
+        _inject_css(global_css + light_css)
