@@ -6,17 +6,17 @@ Supabase REST API. This eliminates all dependency issues on Streamlit Cloud
 (pydantic_core, cryptography, etc.).
 
 Provides:
-  Ã¢â‚¬Â¢ auth.sign_up(email, password, metadata) Ã¢â€ â€™ creates auth user
-  Ã¢â‚¬Â¢ auth.sign_in_with_password(email, password) Ã¢â€ â€™ returns session
-  Ã¢â‚¬Â¢ auth.sign_out() Ã¢â€ â€™ invalidates session
-  Ã¢â‚¬Â¢ auth.reset_password_email(email) Ã¢â€ â€™ sends reset email
-  Ã¢â‚¬Â¢ auth.update_user(token, updates) Ã¢â€ â€™ updates user
-  Ã¢â‚¬Â¢ table(name).select(filters).eq(column, value).execute() Ã¢â€ â€™ query
-  Ã¢â‚¬Â¢ table(name).insert(data).execute() Ã¢â€ â€™ create
-  Ã¢â‚¬Â¢ table(name).update(data).eq(column, value).execute() Ã¢â€ â€™ update
-  Ã¢â‚¬Â¢ table(name).delete().eq(column, value).execute() Ã¢â€ â€™ delete
-  Ã¢â‚¬Â¢ storage.from_(bucket).upload(path, file, options) Ã¢â€ â€™ upload file
-  Ã¢â‚¬Â¢ storage.from_(bucket).get_public_url(path) Ã¢â€ â€™ get URL
+  • auth.sign_up(email, password, metadata) → creates auth user
+  • auth.sign_in_with_password(email, password) → returns session
+  • auth.sign_out() → invalidates session
+  • auth.reset_password_email(email) → sends reset email
+  • auth.update_user(token, updates) → updates user
+  • table(name).select(filters).eq(column, value).execute() → query
+  • table(name).insert(data).execute() → create
+  • table(name).update(data).eq(column, value).execute() → update
+  • table(name).delete().eq(column, value).execute() → delete
+  • storage.from_(bucket).upload(path, file, options) → upload file
+  • storage.from_(bucket).get_public_url(path) → get URL
 """
 from __future__ import annotations
 
@@ -186,3 +186,341 @@ class _QueryBuilder:
         return self
 
     def lt(self, column: str, value: Any):
+        self._filters.append(f"{column}=lt.{_format_value(value)}")
+        return self
+
+    def gte(self, column: str, value: Any):
+        self._filters.append(f"{column}=gte.{_format_value(value)}")
+        return self
+
+    def lte(self, column: str, value: Any):
+        self._filters.append(f"{column}=lte.{_format_value(value)}")
+        return self
+
+    def in_(self, column: str, values: list):
+        vals = ",".join(_format_value(v) for v in values)
+        self._filters.append(f"{column}=in.({vals})")
+        return self
+
+    def like(self, column: str, pattern: str):
+        self._filters.append(f"{column}=like.{pattern}")
+        return self
+
+    def limit(self, n: int):
+        self._limit_val = n
+        return self
+
+    def order(self, column: str, desc: bool = False):
+        self._order_col = column
+        self._order_desc = desc
+        return self
+
+    def maybe_single(self):
+        self._single = True
+        return self
+
+    def single(self):
+        self._single = True
+        return self
+
+    def execute(self):
+        # Build URL — use params dict so requests URL-encodes everything
+        # (select values like "*, profiles!fk(*)" contain spaces + parens
+        #  that MUST be percent-encoded or PostgREST silently drops the join)
+        url = f"{self._client.url}/rest/v1/{self._table}"
+        params = {"select": self._select_cols}
+        for f in self._filters:
+            # f is already in the form "col=op.val"
+            if "=" in f:
+                col, val = f.split("=", 1)
+                params[col] = val
+            else:
+                # Fallback: append as raw query string
+                url += (f"&{f}" if "?" in url else f"?{f}")
+        if self._order_col:
+            direction = "desc" if self._order_desc else "asc"
+            params["order"] = f"{self._order_col}.{direction}"
+        if self._limit_val:
+            params["limit"] = self._limit_val
+
+        headers = self._client._headers()
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        if r.status_code >= 400:
+            raise Exception(r.text)
+        data = r.json()
+        # Handle .single() / .maybe_single()
+        if getattr(self, "_single", False):
+            return _Response(data[0] if data else None)
+        return _Response(data)
+
+    def insert(self, data: Union[dict, list]):
+        return _InsertBuilder(self, data)
+
+    def update(self, data: dict):
+        return _UpdateBuilder(self, data)
+
+    def delete(self):
+        return _DeleteBuilder(self)
+
+    def upsert(self, data: dict, on_conflict: Optional[str] = None):
+        return _UpsertBuilder(self, data, on_conflict)
+
+
+class _InsertBuilder:
+    def __init__(self, query: _QueryBuilder, data: Union[dict, list]):
+        self._query = query
+        self._data = data
+
+    def execute(self):
+        url = f"{self._query._client.url}/rest/v1/{self._query._table}"
+        headers = self._query._client._headers()
+        headers["Prefer"] = "return=representation"
+        r = requests.post(url, headers=headers, json=self._data, timeout=30)
+        if r.status_code >= 400:
+            raise Exception(r.text)
+        data = r.json() if r.text else []
+        return _Response(data)
+
+
+class _UpdateBuilder:
+    def __init__(self, query: _QueryBuilder, data: dict):
+        self._query = query
+        self._data = data
+
+    def eq(self, column: str, value: Any):
+        self._query.eq(column, value)
+        return self
+
+    def execute(self):
+        # Build the URL and use the requests ``params`` dict so that every
+        # value (UUIDs, strings with spaces or parens, ``like`` patterns)
+        # is correctly percent-encoded. The previous implementation
+        # concatenated filters into the URL with ``&`` which broke for any
+        # value containing characters that PostgREST treats as special
+        # (``%20``, ``(``, etc.) and silently dropped rows.
+        url = f"{self._query._client.url}/rest/v1/{self._query._table}"
+        params: Dict[str, str] = {}
+        for f in self._query._filters:
+            # f is in the form "col=op.value"
+            if "=" in f:
+                col, val = f.split("=", 1)
+                params[col] = val
+        headers = self._query._client._headers()
+        headers["Prefer"] = "return=representation"
+        r = requests.patch(url, headers=headers, params=params, json=self._data, timeout=30)
+        if r.status_code >= 400:
+            raise Exception(r.text)
+        data = r.json() if r.text else []
+        return _Response(data)
+
+
+class _DeleteBuilder:
+    def __init__(self, query: _QueryBuilder):
+        self._query = query
+
+    def eq(self, column: str, value: Any):
+        self._query.eq(column, value)
+        return self
+
+    def execute(self):
+        url = f"{self._query._client.url}/rest/v1/{self._query._table}"
+        params: Dict[str, str] = {}
+        for f in self._query._filters:
+            if "=" in f:
+                col, val = f.split("=", 1)
+                params[col] = val
+        headers = self._query._client._headers()
+        r = requests.delete(url, headers=headers, params=params, timeout=30)
+        if r.status_code >= 400:
+            raise Exception(r.text)
+        data = r.json() if r.text else []
+        return _Response(data)
+
+
+class _UpsertBuilder:
+    def __init__(self, query: _QueryBuilder, data: dict, on_conflict: Optional[str] = None):
+        self._query = query
+        self._data = data
+        self._on_conflict = on_conflict
+
+    def execute(self):
+        url = f"{self._query._client.url}/rest/v1/{self._query._table}"
+        params: Dict[str, str] = {}
+        if self._on_conflict:
+            params["on_conflict"] = self._on_conflict
+        headers = self._query._client._headers()
+        headers["Prefer"] = "return=representation,resolution=merge-duplicates"
+        r = requests.post(url, headers=headers, params=params, json=self._data, timeout=30)
+        if r.status_code >= 400:
+            raise Exception(r.text)
+        data = r.json() if r.text else []
+        return _Response(data)
+
+
+class _Response:
+    """Mimics supabase-py response object."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class _StorageBucket:
+    def __init__(self, client: "SupabaseClient", bucket: str):
+        self._client = client
+        self._bucket = bucket
+
+    def upload(self, path: str, file: bytes, file_options: Optional[dict] = None):
+        url = f"{self._client.url}/storage/v1/object/{self._bucket}/{path}"
+        headers = self._client._headers()
+        headers.pop("Content-Type", None)  # we set it explicitly below
+        if file_options:
+            # Accept BOTH "content-type" (hyphen, real supabase-py style)
+            # and "content_type" (underscore, older style). The hyphen form
+            # is what the real supabase-py 2.x expects — see utils/storage.py
+            # for the full rationale of why this matters.
+            content_type = (
+                file_options.get("content-type")
+                or file_options.get("content_type")
+                or "image/jpeg"  # safe default for an image bucket; NOT text/plain
+            )
+            headers["Content-Type"] = content_type
+            # Handle upsert — accept bool True or string "true"
+            upsert = file_options.get("upsert", file_options.get("x-upsert"))
+            if upsert is True or str(upsert).lower() == "true":
+                headers["x-upsert"] = "true"  # MUST be string, not bool
+        else:
+            # Default for an image bucket — text/plain would be rejected by
+            # any bucket with `allowed_mime_types` configured.
+            headers["Content-Type"] = "image/jpeg"
+        r = requests.post(url, headers=headers, data=file, timeout=60)
+        if r.status_code >= 400:
+            raise Exception(r.text)
+        return r.json() if r.text else {}
+
+    def get_public_url(self, path: str) -> str:
+        return f"{self._client.url}/storage/v1/object/public/{self._bucket}/{path}"
+
+    def create_signed_url(self, path: str, expires_in: int = 60) -> Optional[str]:
+        """Create a short-lived signed URL for a private-bucket object.
+
+        Returns the signed URL on success, or None on failure. Used by
+        the verification preview flow because the ``verification-docs``
+        bucket is private (public = false) so ``get_public_url`` returns
+        a URL that 404s for everyone except the service role.
+
+        Implements the documented Supabase Storage endpoint:
+          POST /storage/v1/object/sign/{bucket}/{path}
+        with body ``{"expiresIn": N}`` and the auth header carrying the
+        caller's access token.
+        """
+        url = f"{self._client.url}/storage/v1/object/sign/{self._bucket}/{path}"
+        try:
+            r = requests.post(
+                url,
+                headers=self._client._headers(),
+                json={"expiresIn": int(expires_in)},
+                timeout=30,
+            )
+            if r.status_code >= 400:
+                return None
+            data = r.json() if r.text else {}
+            signed = data.get("signedURL") or data.get("signedUrl")
+            if not signed:
+                return None
+            # The returned path is relative; prepend the storage origin.
+            if signed.startswith("http"):
+                return signed
+            return f"{self._client.url}{signed}"
+        except Exception:
+            return None
+
+
+class _Storage:
+    def __init__(self, client: "SupabaseClient"):
+        self._client = client
+
+    def from_(self, bucket: str) -> _StorageBucket:
+        return _StorageBucket(self._client, bucket)
+
+
+def _format_value(v: Any) -> str:
+    """Format a Python value for use in a PostgREST filter.
+
+    PostgREST expects: col=eq.VALUE  (no surrounding quotes for plain strings).
+    Special chars like commas, parens, backslashes must be backslash-escaped.
+    See: https://postgrest.org/en/stable/api.html#horizontal-filtering-rows
+    """
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, str):
+        # Escape special chars per PostgREST spec (do NOT strip quotes — that
+        # would corrupt values that legitimately contain them)
+        # Special chars to escape: " \ , . ( ) <space>
+        special = '"\\,(). '
+        result = []
+        for ch in v:
+            if ch in special:
+                result.append("\\" + ch)
+            else:
+                result.append(ch)
+        return "".join(result)
+    return str(v)
+
+
+def _get_session_token() -> Optional[str]:
+    """Read the current user's access token from Streamlit session state.
+
+    The ``supabase_lite`` HTTP transport always asks the session for the
+    current token before sending a request. This means a single client
+    object can be safely reused across user logins on the same worker
+    without leaking tokens. If Streamlit isn't available (e.g. running
+    outside the app for tests), returns None and the caller falls back
+    to the anon key on the client.
+    """
+    try:
+        import streamlit as _st
+    except Exception:
+        return None
+    try:
+        return _st.session_state.get("access_token")
+    except Exception:
+        return None
+
+class SupabaseClient:
+    """Drop-in replacement for supabase.create_client().
+
+    The client object is intentionally stateless w.r.t. user identity:
+    every HTTP call reads the current access token from Streamlit's
+    ``st.session_state`` (via ``_get_session_token()``), so the same
+    client instance is safe to reuse across many users on a long-lived
+    worker. The previous design stored the access token on ``self.auth``
+    which meant user A's token would leak to user B if a worker was
+    reused before a fresh client was constructed.
+    """
+
+    def __init__(self, url: str, key: str):
+        self.url = url.rstrip("/")
+        self.anon_key = key
+        self.auth = SupabaseAuth(url, key)
+        self.storage = _Storage(self)
+
+    def _headers(self) -> dict:
+        # Always read the per-session token, not the cached one on auth.
+        token = _get_session_token() or self.auth._access_token or self.anon_key
+        return {
+            "apikey": self.anon_key,
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+    def table(self, name: str) -> _QueryBuilder:
+        return _QueryBuilder(self, name)
+
+
+def create_client(url: str, key: str) -> SupabaseClient:
+    """Drop-in replacement for supabase.create_client()."""
+    return SupabaseClient(url, key)
+
+
+# Type alias for compatibility
+Client = SupabaseClient
