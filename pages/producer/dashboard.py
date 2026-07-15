@@ -281,3 +281,65 @@ def render_producer_dashboard():
             if st.button("🔔 Notifications", use_container_width=True):
                 st.session_state["force_nav"] = "notifications"
                 st.rerun()
+
+    # ── Sales Analytics ──────────────────────────────────────────────────────
+    with st.container(border=True):
+        st.subheader("📈 Sales Analytics (last 30 days)")
+        try:
+            from utils.analytics import get_producer_sales_summary, get_low_stock_products
+            sales = get_producer_sales_summary(user["id"], days=30)
+            sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+            with sc1:
+                st.metric("Revenue (30d)", format_currency(sales.get("total_revenue_etb", 0)))
+            with sc2:
+                st.metric("Orders", sales.get("order_count", 0))
+            with sc3:
+                st.metric("Items sold", sales.get("items_sold", 0))
+            with sc4:
+                st.metric("Avg order", format_currency(sales.get("avg_order_value_etb", 0)))
+            with sc5:
+                st.metric("Unique customers", sales.get("unique_customers", 0))
+
+            # Revenue by day chart
+            rev_by_day = sales.get("revenue_by_day") or []
+            if rev_by_day:
+                import pandas as pd
+                df = pd.DataFrame(rev_by_day).set_index("date")
+                st.line_chart(df, use_container_width=True, height=200)
+
+            # Top products
+            top = sales.get("top_products") or []
+            if top:
+                st.markdown("##### 🏆 Top selling products (30d)")
+                tp_data = [
+                    {
+                        "Product": t.get("name"),
+                        "SKU": t.get("sku"),
+                        "Units sold": t.get("units_sold", 0),
+                        "Revenue": format_currency(t.get("revenue_etb", 0)),
+                        "Rating": f"{t.get('avg_rating', 0):.1f}★ ({t.get('review_count', 0)})",
+                    }
+                    for t in top
+                ]
+                st.dataframe(tp_data, use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.caption(f"Analytics unavailable: {e}")
+
+        # Low-stock alerts
+        try:
+            low = get_low_stock_products(user["id"])
+            if low:
+                st.markdown("##### ⚠️ Low stock alerts")
+                ls_data = [
+                    {
+                        "SKU": p.get("sku"),
+                        "Product": p.get("name"),
+                        "Stock": p.get("stock"),
+                        "Reorder at": p.get("reorder_point"),
+                        "Shortfall": p.get("shortfall", 0),
+                    }
+                    for p in low
+                ]
+                st.dataframe(ls_data, use_container_width=True, hide_index=True)
+        except Exception:
+            pass
