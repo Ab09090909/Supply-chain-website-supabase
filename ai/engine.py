@@ -6,7 +6,7 @@ and the AI Insights tab shows a friendly message.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import streamlit as st
 
@@ -59,7 +59,7 @@ class MLEngine:
             "cart_items":  fetch("cart_items"),
         }
 
-    @st.cache_data(ttl=300, show_spinner="Training demand forecast models…")
+    @st.cache_resource(show_spinner="Training demand forecast models…")
     def train_demand_models(_self) -> Dict[str, Dict[str, Any]]:
         if not ML_AVAILABLE:
             return {}
@@ -97,7 +97,7 @@ class MLEngine:
                 continue
         return models
 
-    @st.cache_data(ttl=300, show_spinner="Training price-prediction model…")
+    @st.cache_resource(show_spinner="Training price-prediction model…")
     def train_price_model(_self) -> Dict[str, Any]:
         if not ML_AVAILABLE:
             return {"trained": False, "reason": "ML libraries not installed"}
@@ -139,7 +139,7 @@ class MLEngine:
         except Exception as e:
             return {"trained": False, "reason": str(e)}
 
-    @st.cache_data(ttl=300, show_spinner="Training recommendation model…")
+    @st.cache_resource(show_spinner="Training recommendation model…")
     def train_recommender(_self) -> Dict[str, Any]:
         if not ML_AVAILABLE:
             return {"trained": False, "reason": "ML libraries not installed"}
@@ -207,5 +207,5 @@ def get_training_summary() -> Dict[str, Any]:
         "price_model_r2": price_model.get("r2", 0), "price_model_mae": price_model.get("mae", 0),
         "recommender_trained": recommender.get("trained", False),
         "recommender_interactions": recommender.get("interaction_count", 0),
-        "cache_ttl_seconds": 300, "last_trained": datetime.utcnow().isoformat(),
+        "cache_ttl_seconds": 300, "last_trained": datetime.now(timezone.utc).isoformat(),
     }
