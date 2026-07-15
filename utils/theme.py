@@ -87,26 +87,39 @@ def apply_theme_css():
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Compact buttons with hover lift */
+/* Modern buttons */
 .stButton > button {
     border-radius: 8px !important;
-    font-size: 0.85rem !important;
-    padding: 0.4rem 0.875rem !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    padding: 0.42rem 1rem !important;
+    letter-spacing: 0.01em !important;
 }
 .stButton > button:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2) !important;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.22) !important;
 }
 
-/* Compact containers — less padding */
-[data-testid="stVerticalBlock"] > div,
-.stContainer > div {
-    padding: 0.5rem !important;
+/* Compact containers — less padding, no stray borders */
+[data-testid="stVerticalBlock"] > div {
+    padding: 0.25rem 0 !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
 }
 
-/* Compact st.container(border=True) */
+/* Explicit border containers keep their border; everything else is clean */
 .stContainer {
     gap: 0.5rem !important;
+}
+
+/* Only containers explicitly rendered with border=True get a border */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 14px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+    overflow: hidden !important;
+    padding: 0 !important;
 }
 
 [data-testid="stSidebar"] {
@@ -169,12 +182,17 @@ a:hover { text-decoration: underline !important; }
     color: #e2e8f0 !important;
     border-right: 1px solid #334155 !important;
 }
-[data-testid="stVerticalBlock"] > div,
-.stContainer > div {
-    background: rgba(30, 41, 59, 0.8) !important;
+[data-testid="stVerticalBlock"] > div {
+    background: transparent !important;
     color: #e2e8f0 !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: rgba(30, 41, 59, 0.85) !important;
     border: 1px solid #334155 !important;
-    border-radius: 12px !important;
+    border-radius: 14px !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
 }
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
@@ -349,12 +367,16 @@ a:hover {
     border-right: 1px solid #e2e8f0 !important;
     box-shadow: 2px 0 8px rgba(0,0,0,0.03) !important;
 }
-[data-testid="stVerticalBlock"] > div,
-.stContainer > div {
+[data-testid="stVerticalBlock"] > div {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] {
     background: #ffffff !important;
     border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
 }
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
