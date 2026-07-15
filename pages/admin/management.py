@@ -360,14 +360,27 @@ def _delete_user(u: dict, admin: dict):
         if confirm == u.get("email"):
             try:
                 client = get_supabase_admin_client()
-                # Delete the profile (cascade will handle related rows)
+                # Delete the profile (cascade will handle related rows).
+                # NOTE: orders.buyer_id and orders.seller_id are
+                # ON DELETE RESTRICT, so this will fail with an FK violation
+                # if the user has any orders. Deactivate instead via the
+                # "Deactivate" button below for users with order history.
                 client.table("profiles").delete().eq("id", u["id"]).execute()
                 _log_admin_action(admin, "delete_user", "profiles", u["id"])
-                st.success("User deleted permanently.")
+                st.success("User deleted permanently. (Their auth account is orphaned and can no longer log in.)")
                 st.session_state.pop("managing_user", None)
                 st.rerun()
             except Exception as e:
-                st.error(f"Failed: {e}")
+                err = str(e).lower()
+                if "foreign key" in err or "violates" in err or "restrict" in err:
+                    st.error(
+                        "Cannot delete this user because they have orders or "
+                        "agreements that reference them. Use the **Deactivate** "
+                        "button instead — it sets is_active=false, which blocks "
+                        "login while preserving the order history. Detail: " + str(e)
+                    )
+                else:
+                    st.error(f"Failed: {e}")
         else:
             st.error("Email doesn't match. Deletion cancelled.")
 
