@@ -24,7 +24,14 @@ def _get_client():
 
 
 def _get_admin_client():
-    """Lazy import of the admin Supabase client."""
+    """Lazy import of the admin Supabase client.
+
+    Only used as a recovery path in sign_up() if the
+    handle_new_user() trigger did not create a profile row. The
+    trigger is expected to do this work via RLS-friendly SECURITY
+    DEFINER; if it fails, the recovery insert is treated as the
+    system's responsibility, not the user's privilege escalation.
+    """
     from database.connection import get_supabase_admin_client
     return get_supabase_admin_client()
 
@@ -91,6 +98,21 @@ def sign_up(
         if not profile_data:
             try:
                 admin_client = _get_admin_client()
+            except Exception as admin_err:
+                # The admin client is unavailable (service_role key not
+                # configured). The auth account was created, but we cannot
+                # insert a profile row without admin privileges. Refuse to
+                # log the user in — that would create an "admin by input"
+                # bypass where the role field in the signup form is
+                # trusted without a profile row to back it.
+                return False, (
+                    "Account was created in Supabase Auth, but profile setup "
+                    "failed and the admin recovery client is not configured. "
+                    "Please run supabase_sql/fix_signup_trigger.sql in the "
+                    "Supabase SQL Editor to repair the handle_new_user "
+                    f"trigger, then sign in again. Detail: {admin_err}"
+                )
+            try:
                 admin_client.table("profiles").insert({
                     "id": user.id,
                     "email": email,
@@ -109,23 +131,16 @@ def sign_up(
                 )
                 profile_data = profile.data
             except Exception as insert_err:
-                # Last resort: still log the user in, but warn them
-                # their profile is incomplete.
-                if response.session:
-                    set_session(response.session.access_token, {
-                        "id": user.id,
-                        "email": email,
-                        "full_name": full_name,
-                        "role": role,
-                        "phone": phone,
-                        "location": location,
-                        "company": company,
-                    })
-                    return True, (
-                        "Account created, but profile setup was incomplete. "
-                        f"Please contact admin. Detail: {insert_err}"
-                    )
-                return False, f"Account created but profile failed: {insert_err}"
+                # Even the admin recovery failed. The user has an auth
+                # account but no profile — we still must NOT log them in,
+                # because every RLS check in the app is keyed off
+                # profiles.role, and a missing profile is equivalent to
+                # "no role" (which the policies interpret as "no access").
+                return False, (
+                    "Account was created in Supabase Auth, but the profile "
+                    "row could not be inserted. Please contact the admin "
+                    "to repair your account. Detail: " + str(insert_err)
+                )
 
         if not profile_data:
             return False, "Signup failed - profile could not be created."
