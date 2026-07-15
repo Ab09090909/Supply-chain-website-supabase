@@ -68,14 +68,23 @@ def render_admin_dashboard():
     with col4:
         metric_card("Fraud Alerts", str(pending_fraud), icon="🚨", color="#ef4444" if pending_fraud > 0 else "#10b981")
 
-    st.markdown("---")
-    st.markdown("##### Users by Role")
+    st.markdown(
+        "<div style='margin:1.5rem 0 0.5rem 0;'>"
+        "<span style='font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8;'>Users by Role</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     role_cols = st.columns(4)
     for i, (role, count) in enumerate(role_counts.items()):
         with role_cols[i]:
             st.metric(role.capitalize(), count)
 
-    st.markdown("##### Recent Orders (last 10)")
+    st.markdown(
+        "<div style='margin:1.5rem 0 0.5rem 0;'>"
+        "<span style='font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8;'>Recent Orders</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     if orders:
         st.dataframe([
             {
