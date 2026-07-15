@@ -90,7 +90,8 @@ def sign_up(
         # leave the user stranded with an auth account but no profile.
         if not profile_data:
             try:
-                client.table("profiles").insert({
+                admin_client = _get_admin_client()
+                admin_client.table("profiles").insert({
                     "id": user.id,
                     "email": email,
                     "full_name": full_name,
@@ -138,7 +139,7 @@ def sign_up(
         if "Database error saving new user" in msg:
             return False, (
                 "Supabase couldn't create your account. This is usually caused "
-                "by a broken trigger. Run supabase/fix_signup_trigger.sql in "
+                "by a broken trigger. Run supabase_sql/fix_signup_trigger.sql in "
                 "the Supabase SQL Editor, then try again. Detail: " + msg
             )
         return False, f"Signup failed: {msg}"
@@ -202,7 +203,7 @@ def request_password_reset(email: str) -> Tuple[bool, str]:
         client = _get_client()
         app_url = st.secrets.get("APP_URL", "http://localhost:8501") if st else "http://localhost:8501"
         client.auth.reset_password_email(
-            email, options={"redirect_to": f"{app_url}?page=reset-password"}
+            {"email": email, "options": {"redirect_to": f"{app_url}?page=reset-password"}}
         )
         return True, "If an account with that email exists, a reset link has been sent."
     except Exception as e:
