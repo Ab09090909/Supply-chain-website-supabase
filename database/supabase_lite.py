@@ -6,17 +6,17 @@ Supabase REST API. This eliminates all dependency issues on Streamlit Cloud
 (pydantic_core, cryptography, etc.).
 
 Provides:
-  â€¢ auth.sign_up(email, password, metadata) â†’ creates auth user
-  â€¢ auth.sign_in_with_password(email, password) â†’ returns session
-  â€¢ auth.sign_out() â†’ invalidates session
-  â€¢ auth.reset_password_email(email) â†’ sends reset email
-  â€¢ auth.update_user(token, updates) â†’ updates user
-  â€¢ table(name).select(filters).eq(column, value).execute() â†’ query
-  â€¢ table(name).insert(data).execute() â†’ create
-  â€¢ table(name).update(data).eq(column, value).execute() â†’ update
-  â€¢ table(name).delete().eq(column, value).execute() â†’ delete
-  â€¢ storage.from_(bucket).upload(path, file, options) â†’ upload file
-  â€¢ storage.from_(bucket).get_public_url(path) â†’ get URL
+  Ã¢â‚¬Â¢ auth.sign_up(email, password, metadata) Ã¢â€ â€™ creates auth user
+  Ã¢â‚¬Â¢ auth.sign_in_with_password(email, password) Ã¢â€ â€™ returns session
+  Ã¢â‚¬Â¢ auth.sign_out() Ã¢â€ â€™ invalidates session
+  Ã¢â‚¬Â¢ auth.reset_password_email(email) Ã¢â€ â€™ sends reset email
+  Ã¢â‚¬Â¢ auth.update_user(token, updates) Ã¢â€ â€™ updates user
+  Ã¢â‚¬Â¢ table(name).select(filters).eq(column, value).execute() Ã¢â€ â€™ query
+  Ã¢â‚¬Â¢ table(name).insert(data).execute() Ã¢â€ â€™ create
+  Ã¢â‚¬Â¢ table(name).update(data).eq(column, value).execute() Ã¢â€ â€™ update
+  Ã¢â‚¬Â¢ table(name).delete().eq(column, value).execute() Ã¢â€ â€™ delete
+  Ã¢â‚¬Â¢ storage.from_(bucket).upload(path, file, options) Ã¢â€ â€™ upload file
+  Ã¢â‚¬Â¢ storage.from_(bucket).get_public_url(path) Ã¢â€ â€™ get URL
 """
 from __future__ import annotations
 
@@ -224,7 +224,7 @@ class _QueryBuilder:
         return self
 
     def execute(self):
-        # Build URL â€” use params dict so requests URL-encodes everything
+        # Build URL Ã¢â‚¬â€ use params dict so requests URL-encodes everything
         # (select values like "*, profiles!fk(*)" contain spaces + parens
         #  that MUST be percent-encoded or PostgREST silently drops the join)
         url = f"{self._client.url}/rest/v1/{self._table}"
@@ -358,20 +358,26 @@ class _StorageBucket:
     def upload(self, path: str, file: bytes, file_options: Optional[dict] = None):
         url = f"{self._client.url}/storage/v1/object/{self._bucket}/{path}"
         headers = self._client._headers()
-        headers.pop("Content-Type", None)  # multipart will set it
+        headers.pop("Content-Type", None)  # we set it explicitly below
         if file_options:
-            # Accept both "content_type" (underscore, supabase-py style)
-            # and "content-type" (hyphen, raw HTTP header style)
+            # Accept BOTH "content-type" (hyphen, real supabase-py style)
+            # and "content_type" (underscore, older style). The hyphen form
+            # is what the real supabase-py 2.x expects â€” see utils/storage.py
+            # for the full rationale of why this matters.
             content_type = (
-                file_options.get("content_type")
-                or file_options.get("content-type")
-                or "application/octet-stream"
+                file_options.get("content-type")
+                or file_options.get("content_type")
+                or "image/jpeg"  # safe default for an image bucket; NOT text/plain
             )
             headers["Content-Type"] = content_type
             # Handle upsert â€” accept bool True or string "true"
             upsert = file_options.get("upsert", file_options.get("x-upsert"))
             if upsert is True or str(upsert).lower() == "true":
                 headers["x-upsert"] = "true"  # MUST be string, not bool
+        else:
+            # Default for an image bucket â€” text/plain would be rejected by
+            # any bucket with `allowed_mime_types` configured.
+            headers["Content-Type"] = "image/jpeg"
         r = requests.post(url, headers=headers, data=file, timeout=60)
         if r.status_code >= 400:
             raise Exception(r.text)
@@ -399,7 +405,7 @@ def _format_value(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, str):
-        # Escape special chars per PostgREST spec (do NOT strip quotes â€” that
+        # Escape special chars per PostgREST spec (do NOT strip quotes Ã¢â‚¬â€ that
         # would corrupt values that legitimately contain them)
         # Special chars to escape: " \ , . ( ) <space>
         special = '"\\,(). '
