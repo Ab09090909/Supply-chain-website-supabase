@@ -1,19 +1,19 @@
 """
-ML Engine â€” self-learning ML engine.
+ML Engine — self-learning ML engine.
 
 Self-learning loop (v6):
   1. Every prediction the engine makes is logged to `ai_prediction_log`
      with its timestamp and predicted value.
   2. On every retrain, the engine backfills `actual_value` for old
      predictions whose truth has now arrived:
-       â€¢ demand_forecast  â†’ sum of order_items.quantity in the prediction's
+       • demand_forecast  → sum of order_items.quantity in the prediction's
          [created_at, target_date] window
-       â€¢ price_optimization â†’ the product's current price (the producer's
+       • price_optimization → the product's current price (the producer's
          new price is the "ground truth" the AI was trying to predict)
   3. Per (product_id, prediction_type) it computes MAE / MAPE / RMSE / bias
      and writes the result to `ai_model_metrics`.
   4. The next prediction uses that bias as a correction term
-     (predicted_final = predicted_raw - bias) â€” a simple residual-boosting
+     (predicted_final = predicted_raw - bias) — a simple residual-boosting
      loop that learns from systematic over/under-prediction.
 
 This means the longer the platform runs, the more accurate the AI becomes:
@@ -94,7 +94,7 @@ class MLEngine:
     # ------------------------------------------------------------------
     # Data loading (cached 5 min)
     # ------------------------------------------------------------------
-    @st.cache_data(ttl=300, show_spinner="Training ML models on your latest dataâ€¦")
+    @st.cache_data(ttl=300, show_spinner="Training ML models on your latest data…")
     def load_training_data(_self) -> Dict[str, Any]:
         """Fetch all relevant tables from Supabase. Cached 5 min.
 
@@ -131,13 +131,13 @@ class MLEngine:
     # ------------------------------------------------------------------
     # Model training
     # ------------------------------------------------------------------
-    @st.cache_resource(show_spinner="Training demand forecast modelsâ€¦")
+    @st.cache_resource(show_spinner="Training demand forecast models…")
     def train_demand_models(_self) -> Dict[str, Dict[str, Any]]:
         """Train a per-product demand model on daily order quantity.
 
         Uses GradientBoostingRegressor when enough samples are available
         (>= 14 days of data), falls back to LinearRegression otherwise.
-        Both are sklearn â€” no extra deps required.
+        Both are sklearn — no extra deps required.
 
         Each model entry carries:
           - model: the trained regressor
@@ -240,7 +240,7 @@ class MLEngine:
                 continue
         return models
 
-    @st.cache_resource(show_spinner="Training price-prediction modelâ€¦")
+    @st.cache_resource(show_spinner="Training price-prediction model…")
     def train_price_model(_self) -> Dict[str, Any]:
         if not ML_AVAILABLE:
             return {"trained": False, "reason": "ML libraries not installed"}
@@ -299,7 +299,7 @@ class MLEngine:
         except Exception as e:
             return {"trained": False, "reason": str(e)}
 
-    @st.cache_resource(show_spinner="Training recommendation modelâ€¦")
+    @st.cache_resource(show_spinner="Training recommendation model…")
     def train_recommender(_self) -> Dict[str, Any]:
         if not ML_AVAILABLE:
             return {"trained": False, "reason": "ML libraries not installed"}
@@ -371,7 +371,7 @@ class MLEngine:
     ) -> None:
         """Persist a single prediction so we can later score it against truth.
 
-        Silent on failure â€” logging is best-effort and must not break the
+        Silent on failure — logging is best-effort and must not break the
         caller's flow.
         """
         try:
@@ -486,7 +486,7 @@ class MLEngine:
                             continue
                         # Only score if the producer has actually changed the
                         # price since the prediction was made (otherwise there
-                        # is no "truth" to compare against â€” the producer just
+                        # is no "truth" to compare against — the producer just
                         # hasn't acted yet).
                         if updated_at and pd.to_datetime(updated_at) <= pd.to_datetime(r["created_at"]):
                             continue
@@ -637,7 +637,7 @@ def get_training_summary() -> Dict[str, Any]:
     """Train all models AND run the self-learning loop (backfill actuals +
     compute metrics) so the displayed accuracy is always fresh.
 
-    Cached 5 min â€” calling it from the UI is cheap.
+    Cached 5 min — calling it from the UI is cheap.
     """
     if not ML_AVAILABLE:
         return {"ml_available": False,
@@ -651,7 +651,7 @@ def get_training_summary() -> Dict[str, Any]:
     metrics_written = engine.compute_metrics()
 
     # 2) Load fresh data (the cache may still hold the pre-backfill copy,
-    #    but that's fine â€” metrics are persisted independently).
+    #    but that's fine — metrics are persisted independently).
     data = engine.load_training_data()
     demand_models = engine.train_demand_models()
     price_model = engine.train_price_model()
