@@ -47,14 +47,16 @@ MODEL_VERSION = "v6.0.0-self-learning"
 class MLEngine:
     """Loads + caches training data and trained models from Supabase.
 
-    All write operations (logging predictions, backfilling actuals,
-    writing metrics) go through the admin client when available, so they
-    bypass RLS. Reads use the regular user client.
+    Write operations (logging predictions, backfilling actuals, writing
+    metrics) use the regular user-scoped client and rely on RLS. The
+    ``ai_prediction_log`` and ``ai_model_metrics`` tables must have
+    INSERT policies for ``authenticated`` (see ``supabase_sql/schema.sql``).
+    The admin client is no longer used for self-learning writes — that
+    was a privilege-escalation hazard in case of any RLS gap.
     """
 
     def __init__(self):
         self._client = None
-        self._admin_client = None
 
     # ------------------------------------------------------------------
     # Client accessors
@@ -66,20 +68,28 @@ class MLEngine:
             self._client = get_supabase_client()
         return self._client
 
-    @property
-    def admin_client(self):
-        if self._admin_client is None:
-            from database.connection import get_supabase_admin_client
-            self._admin_client = get_supabase_admin_client()
-        return self._admin_client
-
     def _write_client(self):
-        """Use admin client when available (bypasses RLS for writes).
-        Falls back to the regular client for anon-only deployments."""
+        """Return the client used for self-learning writes. Honours RLS.
+
+        If the current user is an admin, the admin client is used so that
+        cross-tenant metrics can be written (admins see all rows). For
+        non-admin users, the regular client is used and RLS determines
+        what is writable. If RLS blocks the write, the operation fails
+        loudly via the Supabase error — which is what we want, instead
+        of silently escalating privileges.
+        """
         try:
-            return self.admin_client
+            user = st.session_state.get("user") or {}
         except Exception:
-            return self.client
+            user = {}
+        if user.get("role") == "admin":
+            try:
+                from database.connection import get_supabase_admin_client
+                return get_supabase_admin_client()
+            except Exception:
+                # Admin key not configured — fall back to anon client
+                return self.client
+        return self.client
 
     # ------------------------------------------------------------------
     # Data loading (cached 5 min)
@@ -495,9 +505,18 @@ class MLEngine:
     def compute_metrics(self) -> int:
         """Recompute MAE/MAPE/RMSE/bias per (product_id, prediction_type)
         and persist to ai_model_metrics. Returns number of metric rows written.
+
+        Minimum-sample guard: we only compute a bias correction when there
+        are at least ``MIN_SAMPLES_FOR_BIAS`` scored predictions for a
+        (product, type) pair. Below that, the metric is still recorded as
+        a single historical row (so the dashboard can show "not enough
+        data yet") but its ``bias`` is forced to 0 so it never gets fed
+        back into the next prediction. This prevents 1-sample "100%
+        accuracy" rows from biasing future forecasts.
         """
         if not ML_AVAILABLE:
             return 0
+        MIN_SAMPLES_FOR_BIAS = 5
         try:
             data = self.load_training_data()
             log_df = data.get("prediction_log")
@@ -531,7 +550,11 @@ class MLEngine:
                 # MAPE only counts non-zero actuals
                 nonzero = y_true != 0
                 mape = float(np.mean(np.abs(err[nonzero] / y_true[nonzero])) * 100) if nonzero.any() else None
-                bias = float(np.mean(err))
+                # Only treat the bias as reliable when we have enough samples
+                if len(group) >= MIN_SAMPLES_FOR_BIAS:
+                    bias = float(np.mean(err))
+                else:
+                    bias = 0.0
                 rows.append({
                     "product_id": pid,
                     "prediction_type": ptype,
@@ -641,6 +664,13 @@ def get_training_summary() -> Dict[str, Any]:
         metrics_df = pd.DataFrame()
     if not metrics_df.empty:
         latest = metrics_df.sort_values("evaluated_at").groupby(["product_id", "prediction_type"]).tail(1)
+        # Only include rows that met the minimum sample size — otherwise
+        # the headline "accuracy" reflects single lucky predictions and is
+        # misleading. ``MIN_SAMPLES_FOR_ACCURACY`` is the same threshold
+        # used in compute_metrics for the bias correction.
+        MIN_SAMPLES_FOR_ACCURACY = 5
+        if "samples" in latest.columns:
+            latest = latest[latest["samples"] >= MIN_SAMPLES_FOR_ACCURACY]
         demand_mape = latest[latest["prediction_type"] == "demand_forecast"]["mape"].dropna()
         price_mape = latest[latest["prediction_type"] == "price_optimization"]["mape"].dropna()
         demand_accuracy = float(100 - demand_mape.mean()) if not demand_mape.empty else None
