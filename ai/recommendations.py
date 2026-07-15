@@ -1,8 +1,13 @@
 """
-Recommendations module — suggests products to users.
+Recommendations module â€” suggests products to users.
 
 Uses collaborative filtering (cosine similarity on user-product interaction
 matrix) to find products similar to ones the user has ordered/favorited.
+
+Self-learning (v6): every recommended product that the user subsequently
+orders or favorites is recorded as a "hit" via ai_prediction_log
+(prediction_type='recommendation'). The recommender's hit-rate is
+surfaced in the AI Insights summary so users can see the loop closing.
 """
 from __future__ import annotations
 
@@ -18,7 +23,7 @@ def get_recommendations(user_id: str, top_n: int = 6) -> List[Dict[str, Any]]:
     """Get top-N product recommendations for a user.
 
     Strategy:
-      1. If collaborative filtering model is trained → use it.
+      1. If collaborative filtering model is trained â†’ use it.
       2. Else fallback to popularity-based (most-ordered products).
       3. Else fallback to random active products.
     """
