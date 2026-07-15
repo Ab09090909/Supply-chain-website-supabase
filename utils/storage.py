@@ -1,12 +1,12 @@
 """
-Supabase Storage helper â€” upload images to the 'product-images' bucket.
+Supabase Storage helper — upload images to the 'product-images' bucket.
 
 Used for:
-  â€¢ Product photos (when adding/editing products)
-  â€¢ User avatars (when editing profile)
+  • Product photos (when adding/editing products)
+  • User avatars (when editing profile)
 
 FIXES (v5):
-  â€¢ **CRITICAL FIX**: use `content-type` (hyphen) in `file_options`, NOT
+  • **CRITICAL FIX**: use `content-type` (hyphen) in `file_options`, NOT
     `content_type` (underscore). The real supabase-py 2.x merges
     `file_options` over `DEFAULT_FILE_OPTIONS = {"content-type":
     "text/plain;charset=UTF-8", ...}` and then does
@@ -16,16 +16,16 @@ FIXES (v5):
     with `415 invalid_mime_type, mime type text/plain is not supported`
     whenever the bucket has `allowed_mime_types` configured. This was the
     cause of the avatar-upload failures in v4.
-  â€¢ Magic-byte sniffing fallback: if `uploaded_file.type` is missing or
+  • Magic-byte sniffing fallback: if `uploaded_file.type` is missing or
     looks suspicious, derive the MIME type from the first few bytes of the
     file. Browsers usually get this right, but some mobile Chrome uploads
-    report the wrong type â€” sniffing makes us bulletproof.
+    report the wrong type — sniffing makes us bulletproof.
 
 FIXES (v4):
-  â€¢ Better error handling with specific error messages
-  â€¢ Removed cache-bust query param that was breaking some Supabase Storage URLs
-  â€¢ Added retry logic for transient failures
-  â€¢ Validates file size AND content before uploading
+  • Better error handling with specific error messages
+  • Removed cache-bust query param that was breaking some Supabase Storage URLs
+  • Added retry logic for transient failures
+  • Validates file size AND content before uploading
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _sniff_mime_from_bytes(data: bytes) -> Optional[str]:
     """Detect MIME type from the first few bytes (magic bytes).
 
     Returns one of ALLOWED_MIME or None if not recognized as an image.
-    This is a safety net â€” Streamlit's `uploaded_file.type` is usually
+    This is a safety net — Streamlit's `uploaded_file.type` is usually
     correct, but mobile browsers occasionally misreport the type.
     """
     if not data or len(data) < 12:
@@ -78,7 +78,7 @@ def upload_image(
         allowed_types: MIME types to accept
 
     Returns:
-        (public_url, error_message) Ã¢â‚¬â€ one of them is None on success/failure.
+        (public_url, error_message) — one of them is None on success/failure.
     """
     if uploaded_file is None:
         return None, "No file provided."
@@ -95,7 +95,7 @@ def upload_image(
 
     # --- Determine MIME type ---
     # Priority: magic bytes > Streamlit's reported type > extension.
-    # Magic bytes are the ground truth â€” browsers sometimes report the
+    # Magic bytes are the ground truth — browsers sometimes report the
     # wrong type, especially on mobile, which causes the Supabase
     # `allowed_mime_types` check to reject the upload with 415.
     file_type = getattr(uploaded_file, "type", None) or ""
@@ -159,19 +159,19 @@ def upload_image(
             # underscored key leaves text/plain in place, which the
             # `allowed_mime_types` bucket policy rejects with HTTP 415.
             #
-            # Also pass `upsert` as the STRING "true" â€” supabase-py puts
+            # Also pass `upsert` as the STRING "true" — supabase-py puts
             # it into the `x-upsert` HTTP header, and httpx rejects
             # non-string header values.
             response = client.storage.from_(BUCKET_NAME).upload(
                 path=file_path,
                 file=file_bytes,
                 file_options={
-                    "content-type": file_type,   # HYPHEN â€” overrides DEFAULT_FILE_OPTIONS
-                    "upsert": "true",            # STRING â€” httpx requires str header values
+                    "content-type": file_type,   # HYPHEN — overrides DEFAULT_FILE_OPTIONS
+                    "upsert": "true",            # STRING — httpx requires str header values
                 },
             )
 
-            # Get the public URL (NO cache-bust query param Ã¢â‚¬â€ it breaks some setups)
+            # Get the public URL (NO cache-bust query param — it breaks some setups)
             public_url = client.storage.from_(BUCKET_NAME).get_public_url(file_path)
 
             # Verify the URL is well-formed
@@ -218,8 +218,8 @@ def render_image_uploader(
 ) -> Tuple[Optional[str], Optional[str]]:
     """Render a Streamlit file_uploader + preview. Returns (final_url, error).
 
-    If user uploads a new file Ã¢â€ â€™ upload + return new URL.
-    If user keeps existing Ã¢â€ â€™ return current_url.
+    If user uploads a new file → upload + return new URL.
+    If user keeps existing → return current_url.
     Also allows pasting a URL as an alternative.
     """
     col1, col2 = st.columns([1, 2])
@@ -229,7 +229,7 @@ def render_image_uploader(
             try:
                 st.image(current_url, caption="Current image", use_container_width=True)
             except Exception:
-                st.markdown("Ã°Å¸â€“Â¼Ã¯Â¸Â _Preview unavailable_")
+                st.markdown("🖼️ _Preview unavailable_")
         else:
             st.markdown("*No image yet*")
 
@@ -255,7 +255,7 @@ def render_image_uploader(
             if err:
                 st.error(err)
                 return current_url, err
-            st.success("Ã¢Å“â€¦ Image uploaded successfully!")
+            st.success("✅ Image uploaded successfully!")
             return new_url, None
         elif url_input.strip():
             return url_input.strip(), None
