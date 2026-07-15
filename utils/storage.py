@@ -1,16 +1,16 @@
 """
-Supabase Storage helper — upload images to the 'product-images' bucket.
+Supabase Storage helper â€” upload images to the 'product-images' bucket.
 
 Used for:
-  • Product photos (when adding/editing products)
-  • User avatars (when editing profile)
+  â€¢ Product photos (when adding/editing products)
+  â€¢ User avatars (when editing profile)
 
 FIXES (v4):
-  • Correct file_options format (content_type with underscore, upsert as boolean)
-  • Better error handling with specific error messages
-  • Removed cache-bust query param that was breaking some Supabase Storage URLs
-  • Added retry logic for transient failures
-  • Validates file size AND content before uploading
+  â€¢ Correct file_options format (content_type with underscore, upsert as boolean)
+  â€¢ Better error handling with specific error messages
+  â€¢ Removed cache-bust query param that was breaking some Supabase Storage URLs
+  â€¢ Added retry logic for transient failures
+  â€¢ Validates file size AND content before uploading
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def upload_image(
         allowed_types: MIME types to accept
 
     Returns:
-        (public_url, error_message) — one of them is None on success/failure.
+        (public_url, error_message) â€” one of them is None on success/failure.
     """
     if uploaded_file is None:
         return None, "No file provided."
@@ -85,17 +85,22 @@ def upload_image(
         try:
             client = get_supabase_client()
 
-            # CORRECT API: file_options dict with content_type (underscore) and upsert (boolean)
+            # IMPORTANT: pass upsert as the STRING "true", not bool True.
+            # The real supabase-py library converts `upsert` to the HTTP header
+            # `x-upsert`, and Python's http.client rejects non-string header
+            # values with: "Header value must be str or bytes, not <class 'bool'>".
+            # Using "true" (string) works with both supabase-py and supabase_lite.
+            # Also accept both "content_type" (underscore) and "content-type" (hyphen).
             response = client.storage.from_(BUCKET_NAME).upload(
                 path=file_path,
                 file=file_bytes,
                 file_options={
                     "content_type": file_type,
-                    "upsert": True,  # boolean, not string
+                    "upsert": "true",  # STRING, not bool â€” fixes Header value error
                 },
             )
 
-            # Get the public URL (NO cache-bust query param — it breaks some setups)
+            # Get the public URL (NO cache-bust query param â€” it breaks some setups)
             public_url = client.storage.from_(BUCKET_NAME).get_public_url(file_path)
 
             # Verify the URL is well-formed
@@ -142,8 +147,8 @@ def render_image_uploader(
 ) -> Tuple[Optional[str], Optional[str]]:
     """Render a Streamlit file_uploader + preview. Returns (final_url, error).
 
-    If user uploads a new file → upload + return new URL.
-    If user keeps existing → return current_url.
+    If user uploads a new file â†’ upload + return new URL.
+    If user keeps existing â†’ return current_url.
     Also allows pasting a URL as an alternative.
     """
     col1, col2 = st.columns([1, 2])
@@ -153,7 +158,7 @@ def render_image_uploader(
             try:
                 st.image(current_url, caption="Current image", use_container_width=True)
             except Exception:
-                st.markdown("🖼️ _Preview unavailable_")
+                st.markdown("ðŸ–¼ï¸ _Preview unavailable_")
         else:
             st.markdown("*No image yet*")
 
@@ -179,7 +184,7 @@ def render_image_uploader(
             if err:
                 st.error(err)
                 return current_url, err
-            st.success("✅ Image uploaded successfully!")
+            st.success("âœ… Image uploaded successfully!")
             return new_url, None
         elif url_input.strip():
             return url_input.strip(), None
