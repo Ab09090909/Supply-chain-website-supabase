@@ -133,8 +133,9 @@ def _render_user_bubble(text: str):
 
 def _render_assistant_bubble(text: str):
     """Render an assistant message bubble (left-aligned, white with border)."""
-    # Convert markdown-style bold to HTML
-    formatted = text.replace("**", "<strong>").replace("</strong>", "**")
+    # Convert markdown-style bold to HTML using regex
+    import re
+    formatted = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
     # Simple paragraph handling
     formatted = formatted.replace("\n\n", "</p><p>")
     formatted = f"<p>{formatted}</p>"
