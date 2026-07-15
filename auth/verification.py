@@ -1,7 +1,7 @@
 """
-Document verification page Ã¢â‚¬â€ shown after login.
+Document verification page — shown after login.
 
-v5 fix: Fully self-contained Ã¢â‚¬â€ works even if migration_v5.sql hasn't been run.
+v5 fix: Fully self-contained — works even if migration_v5.sql hasn't been run.
 The upload form always renders. If the table/bucket doesn't exist, shows a
 clear error message instead of crashing.
 """
@@ -14,12 +14,12 @@ from auth.session import get_current_user
 
 
 DOCUMENT_TYPES = [
-    ("national_id", "Ã°Å¸â€ â€ National ID"),
-    ("drivers_license", "Ã°Å¸Å¡â€” Driver's License"),
-    ("passport", "Ã°Å¸â€œËœ Passport"),
-    ("business_license", "Ã°Å¸ÂÂ¢ Business License"),
-    ("tax_certificate", "Ã°Å¸Â§Â¾ Tax Certificate"),
-    ("other", "Ã°Å¸â€œâ€ž Other Government Document"),
+    ("national_id", "🆔 National ID"),
+    ("drivers_license", "🚗 Driver's License"),
+    ("passport", "📘 Passport"),
+    ("business_license", "🏢 Business License"),
+    ("tax_certificate", "🧾 Tax Certificate"),
+    ("other", "📄 Other Government Document"),
 ]
 
 
@@ -57,7 +57,7 @@ def is_user_verified() -> bool:
         return True
     status = user.get("verification_status")
     if status is None:
-        return True  # column doesn't exist Ã¢â‚¬â€ allow access
+        return True  # column doesn't exist — allow access
     return status == "verified"
 
 
@@ -76,7 +76,7 @@ def get_verification_status() -> str:
 
 def render_verification_page():
     """The page shown to users for document upload. Fully self-contained."""
-    st.markdown("### Ã°Å¸â€Â Account Verification")
+    st.markdown("### 🔐 Account Verification")
     st.caption("Upload your documents to get verified and unlock all features")
 
     user = get_current_user()
@@ -88,25 +88,25 @@ def render_verification_page():
 
     # ---- Status banner ----
     if status == "verified":
-        st.success("Ã¢Å“â€¦ Your account is verified! You have full access to all features.")
+        st.success("✅ Your account is verified! You have full access to all features.")
         return
 
     if status == "pending":
         st.info(
-            "Ã¢ÂÂ³ **Verification in progress.**\n\n"
+            "⏳ **Verification in progress.**\n\n"
             "Your documents are being reviewed by our admin team. This usually takes 1-2 business days.\n\n"
             "While you wait, you can browse the **Marketplace**."
         )
 
     if status == "rejected":
         st.error(
-            "Ã¢ÂÅ’ **Verification rejected.**\n\n"
+            "❌ **Verification rejected.**\n\n"
             "Your submitted documents were not approved. Please re-upload clearer copies."
         )
 
     if status == "not_required":
         st.info(
-            "Ã¢â€žÂ¹Ã¯Â¸Â **Verification is optional right now.**\n\n"
+            "ℹ️ **Verification is optional right now.**\n\n"
             "You can upload your documents below for admin verification, "
             "but it's not required to use the platform."
         )
@@ -114,19 +114,19 @@ def render_verification_page():
     st.markdown("---")
 
     # ---- Why we need this ----
-    with st.expander("Ã°Å¸â€œâ€¹ Why do we need verification?"):
+    with st.expander("📋 Why do we need verification?"):
         st.markdown("""
         **To keep our platform safe for everyone**, we may require users to verify their identity before they can:
-        - Ã°Å¸â€œÂ¦ Place orders
-        - Ã°Å¸â€™Â¬ Send messages to other users
-        - Ã°Å¸Â¤â€“ Use AI features (matching, predictions)
+        - 📦 Place orders
+        - 💬 Send messages to other users
+        - 🤖 Use AI features (matching, predictions)
 
         **What we accept:**
-        - Ã°Å¸â€ â€ National ID (front + back)
-        - Ã°Å¸Å¡â€” Driver's License
-        - Ã°Å¸â€œËœ Passport (photo page)
-        - Ã°Å¸ÂÂ¢ Business License (for merchants/producers)
-        - Ã°Å¸Â§Â¾ Tax Certificate (for businesses)
+        - 🆔 National ID (front + back)
+        - 🚗 Driver's License
+        - 📘 Passport (photo page)
+        - 🏢 Business License (for merchants/producers)
+        - 🧾 Tax Certificate (for businesses)
 
         **Privacy:** Your documents are encrypted and only visible to admin reviewers.
         """)
@@ -149,11 +149,11 @@ def render_verification_page():
         err = str(e).lower()
         if "could not find" in err or "pgrst205" in err or "does not exist" in err:
             st.warning(
-                "Ã¢Å¡ Ã¯Â¸Â The `verification_documents` table doesn't exist yet. "
+                "⚠️ The `verification_documents` table doesn't exist yet. "
                 "Run `supabase/migration_v5.sql` in your Supabase SQL Editor to enable document uploads."
             )
-            st.info("You can still upload your document info below Ã¢â‚¬â€ it will be saved when the table is ready.")
-        # Continue Ã¢â‚¬â€ still show the upload form
+            st.info("You can still upload your document info below — it will be saved when the table is ready.")
+        # Continue — still show the upload form
 
     # ---- Show previously uploaded docs ----
     if existing_docs:
@@ -162,15 +162,15 @@ def render_verification_page():
             col1, col2 = st.columns([3, 1])
             with col1:
                 type_label = next((label for code, label in DOCUMENT_TYPES if code == doc["document_type"]), doc["document_type"])
-                st.markdown(f"**{type_label}** Ã¢â‚¬â€ `{doc.get('document_name', 'document')}`")
-                st.caption(f"Uploaded {doc.get('uploaded_at', '')[:10] if doc.get('uploaded_at') else 'Ã¢â‚¬â€'}")
+                st.markdown(f"**{type_label}** — `{doc.get('document_name', 'document')}`")
+                st.caption(f"Uploaded {doc.get('uploaded_at', '')[:10] if doc.get('uploaded_at') else '—'}")
             with col2:
-                status_emoji = {"approved": "Ã¢Å“â€¦", "pending": "Ã¢ÂÂ³", "rejected": "Ã¢ÂÅ’"}.get(doc["status"], "Ã¢Ââ€œ")
+                status_emoji = {"approved": "✅", "pending": "⏳", "rejected": "❌"}.get(doc["status"], "❓")
                 st.markdown(f"**{status_emoji} {doc['status'].title()}**")
         st.markdown("---")
 
     # ---- Upload form (ALWAYS renders) ----
-    st.markdown("#### Ã°Å¸â€œÂ¤ Upload New Document")
+    st.markdown("#### 📤 Upload New Document")
 
     with st.form("upload_doc_form"):
         col1, col2 = st.columns(2)
@@ -194,7 +194,7 @@ def render_verification_page():
             help="Upload a clear photo or scan of your document. Max 10 MB. Accepted: JPG, PNG, WebP, PDF.",
         )
 
-        submitted = st.form_submit_button("Ã°Å¸â€œÂ¤ Submit for Verification", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("📤 Submit for Verification", type="primary", use_container_width=True)
 
         if submitted:
             if not uploaded_file:
@@ -221,7 +221,7 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
 
         # Determine the real MIME type. Streamlit's `uploaded_file.type` is
         # usually right, but mobile browsers sometimes report the wrong type,
-        # and the verification-docs bucket has `allowed_mime_types` set â€”
+        # and the verification-docs bucket has `allowed_mime_types` set —
         # any mismatch produces HTTP 415 from Supabase Storage.
         # Priority: magic bytes > browser-reported type > extension guess.
         mime_type = uploaded_file.type or ""
@@ -248,7 +248,7 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
                 # to set the multipart file part's Content-Type. Using the
                 # underscored key leaves text/plain in place, which the
                 # `allowed_mime_types` bucket policy rejects with HTTP 415.
-                # `upsert` must be the STRING "true" (not bool) â€” httpx
+                # `upsert` must be the STRING "true" (not bool) — httpx
                 # rejects non-string HTTP header values for `x-upsert`.
                 file_options={"content-type": mime_type, "upsert": "true"},
             )
@@ -257,7 +257,7 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
             err = str(storage_err).lower()
             if "bucket" in err and "not found" in err:
                 st.error(
-                    "Ã¢ÂÅ’ Storage bucket 'verification-docs' not found.\n\n"
+                    "❌ Storage bucket 'verification-docs' not found.\n\n"
                     "**To fix:** Run `supabase/migration_v5.sql` in your Supabase SQL Editor "
                     "to create the storage bucket."
                 )
@@ -280,7 +280,7 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
             err = str(db_err).lower()
             if "could not find" in err or "pgrst205" in err:
                 st.error(
-                    "Ã¢ÂÅ’ The `verification_documents` table doesn't exist.\n\n"
+                    "❌ The `verification_documents` table doesn't exist.\n\n"
                     "**To fix:** Run `supabase/migration_v5.sql` in your Supabase SQL Editor "
                     "to create the table."
                 )
@@ -295,23 +295,25 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
             }).eq("id", user["id"]).execute()
             st.session_state["user"]["verification_status"] = "pending"
         except Exception:
-            pass  # column might not exist yet Ã¢â‚¬â€ that's OK
+            pass  # column might not exist yet — that's OK
 
         # Notify admins
         try:
             admins = client.table("profiles").select("id").eq("role", "admin").execute().data or []
-            for admin in admins:
-                client.table("notifications").insert({
+            if admins:
+                rows = [{
                     "user_id": admin["id"],
                     "sender_id": user["id"],
-                    "title": "Ã°Å¸â€œâ€ž New Verification Request",
+                    "title": "📄 New Verification Request",
                     "message": f"{user['full_name']} ({user['email']}) submitted a {doc_type.replace('_', ' ')} for verification.",
                     "type": "info",
-                }).execute()
+                } for admin in admins]
+                client.table("notifications").insert(rows).execute()
+
         except Exception:
             pass
 
-        st.success("Ã¢Å“â€¦ Document uploaded successfully! Your verification is now pending review.")
+        st.success("✅ Document uploaded successfully! Your verification is now pending review.")
         st.balloons()
 
     except Exception as e:
