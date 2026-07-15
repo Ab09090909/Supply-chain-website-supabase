@@ -1,4 +1,4 @@
-"""Customer shopping cart."""
+"""Customer marketplace - browse and favorite products."""
 from __future__ import annotations
 
 import streamlit as st
@@ -6,128 +6,128 @@ import streamlit as st
 from auth.session import get_current_user
 from database.connection import get_supabase_client
 from utils.ui import page_header
-from utils.helpers import format_currency, generate_order_number
+from utils.helpers import format_currency
 
 
-def render_customer_cart():
-    page_header("Shopping Cart", "Review items and place your order")
+def render_customer_marketplace():
+    page_header("Marketplace", "Browse fresh products from our producers")
 
     user = get_current_user()
     if not user:
         return
 
-    client = get_supabase_client()
-
     try:
-        cart_items = (
-            client.table("cart_items")
-            .select("*, products(*)")
+        client = get_supabase_client()
+        products = (
+            client.table("products")
+            .select("*, profiles!products_producer_id_fkey(full_name, company)")
+            .eq("status", "active")
+            .gt("stock", 0)
+            .order("created_at", desc=True)
+            .execute()
+        ).data or []
+
+        favorites = (
+            client.table("favorites")
+            .select("product_id")
             .eq("user_id", user["id"])
             .execute()
         ).data or []
+        fav_ids = {f["product_id"] for f in favorites}
     except Exception as e:
-        st.error(f"Failed to load cart: {e}")
+        st.error(f"Failed to load marketplace: {e}")
         return
 
-    if not cart_items:
-        st.info("🛒 Your cart is empty. Browse the marketplace to add products!")
+    if not products:
+        st.info("No products available right now. Check back soon!")
         return
 
-    subtotal = 0.0
-    for item in cart_items:
-        product = item.get("products") or {}
-        price = float(product.get("price", 0))
-        line_total = price * item["quantity"]
-        subtotal += line_total
-
-        with st.container(border=True):
-            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-            with col1:
-                st.markdown(f"**{product.get('name', '—')}**")
-                st.caption(f"SKU: {product.get('sku', '—')}")
-            with col2:
-                st.metric("Price", format_currency(price))
-            with col3:
-                st.metric("Qty", item["quantity"])
-            with col4:
-                st.metric("Subtotal", format_currency(line_total))
-                if st.button("Remove", key=f"rm_{item['id']}"):
-                    client.table("cart_items").delete().eq("id", item["id"]).execute()
-                    st.rerun()
-
-    st.markdown("---")
-    tax = subtotal * 0.15  # 15% VAT (Ethiopia)
-    shipping = 200.0 if subtotal < 5000 else 0.0  # ETB
-    total = subtotal + tax + shipping
-
+    # Search / filter
     col1, col2 = st.columns([3, 1])
+    with col1:
+        search = st.text_input("🔍 Search products", placeholder="Try 'milk', 'avocado', 'wheat'...")
     with col2:
-        st.markdown(f"**Subtotal:** {format_currency(subtotal)}")
-        st.markdown(f"**Tax (15%):** {format_currency(tax)}")
-        st.markdown(f"**Shipping:** {format_currency(shipping)}")
-        st.markdown(f"### Total: {format_currency(total)}")
+        categories = ["All"] + sorted({p.get("category", "Other") for p in products})
+        category = st.selectbox("Category", categories)
 
-        if st.button("Place Order", type="primary", use_container_width=True):
-            try:
-                # Use first product's producer as the seller (simplified)
-                first_product = cart_items[0]["products"]
-                seller_id = first_product["producer_id"]
+    filtered = [
+        p for p in products
+        if (not search or search.lower() in p["name"].lower() or search.lower() in p.get("description", "").lower())
+        and (category == "All" or p.get("category") == category)
+    ]
 
-                order_number = generate_order_number("CUST")
+    st.markdown(f"###### {len(filtered)} product(s) found")
 
-                order_payload = {
-                    "order_number": order_number,
-                    "buyer_id": user["id"],
-                    "buyer_role": "customer",
-                    "seller_id": seller_id,
-                    "seller_role": "producer",
-                    "subtotal": subtotal,
-                    "tax": tax,
-                    "shipping_cost": shipping,
-                    "total": total,
-                    "status": "pending",
-                    "payment_status": "pending",
-                    "shipping_address": {"name": user["full_name"], "city": user.get("location", "")},
-                }
-                insert_response = client.table("orders").insert(order_payload).execute()
-                inserted_data = insert_response.data or []
-
-                # Get the order id reliably
-                if inserted_data and isinstance(inserted_data, list) and len(inserted_data) > 0:
-                    new_order = inserted_data[0]
-                else:
-                    fetched = (
-                        client.table("orders")
-                        .select("id")
-                        .eq("order_number", order_number)
-                        .maybe_single()
-                        .execute()
-                    )
-                    new_order = fetched.data if (fetched and fetched.data) else None
-
-                # Insert order items (only if we have the order id)
-                if new_order and new_order.get("id"):
-                    items_to_insert = [
-                        {
-                            "order_id": new_order["id"],
-                            "product_id": item["product_id"],
-                            "sku": item["products"]["sku"],
-                            "name": item["products"]["name"],
-                            "unit_price": float(item["products"]["price"]),
-                            "quantity": item["quantity"],
-                        }
-                        for item in cart_items
-                    ]
+    # Grid layout
+    cols = st.columns(3)
+    for i, p in enumerate(filtered):
+        with cols[i % 3]:
+            with st.container(border=True):
+                # Product image (NEW)
+                image_url = p.get("image_url")
+                if image_url:
                     try:
-                        client.table("order_items").insert(items_to_insert).execute()
+                        st.image(image_url, use_container_width=True)
                     except Exception:
-                        pass
+                        st.markdown("📦")
+                else:
+                    st.markdown(
+                        "<div style='height:120px; background:#f1f5f9; border-radius:8px; "
+                        "display:flex; align-items:center; justify-content:center; "
+                        "font-size:2.5rem; color:#94a3b8;'>📦</div>",
+                        unsafe_allow_html=True,
+                    )
 
-                # Clear cart
-                client.table("cart_items").delete().eq("user_id", user["id"]).execute()
+                producer = p.get("profiles") or {}
+                st.markdown(f"**{p['name']}**")
+                st.caption(f"by {producer.get('full_name', 'Unknown')}")
+                st.markdown(f"📦 `{p['sku']}` · 🏷️ {p.get('category', 'Other')}")
+                st.markdown(f"### {format_currency(p['price'])}")
+                st.caption(f"Stock: {p['stock']} {p.get('unit', '')}")
 
-                st.success(f"Order {order_number} placed successfully!")
-                st.balloons()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to place order: {e}")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if p["id"] in fav_ids:
+                        if st.button("♥", key=f"unfav_{p['id']}", help="Remove from favorites"):
+                            client.table("favorites").delete().eq(
+                                "user_id", user["id"]
+                            ).eq("product_id", p["id"]).execute()
+                            st.rerun()
+                    else:
+                        if st.button("♡", key=f"fav_{p['id']}", help="Add to favorites"):
+                            client.table("favorites").insert({
+                                "user_id": user["id"],
+                                "product_id": p["id"],
+                            }).execute()
+                            st.rerun()
+                with col_b:
+                    qty = st.number_input("Qty", min_value=1, max_value=p["stock"], value=1, key=f"qty_{p['id']}")
+                    if st.button("Add to cart", key=f"cart_{p['id']}"):
+                        try:
+                            # Use a single atomic upsert so rapid double-clicks
+                            # can't both hit the unique(user_id, product_id)
+                            # constraint and silently swallow the second insert.
+                            # The ``ignore_duplicates`` resolution guarantees
+                            # the existing row's quantity is preserved; we then
+                            # increment it in a follow-up update. This is two
+                            # round-trips, but the alternative (a read-modify-
+                            # write in pure SQL) requires a Postgres function
+                            # which we don't ship here.
+                            client.table("cart_items").upsert(
+                                {
+                                    "user_id": user["id"],
+                                    "product_id": p["id"],
+                                    "quantity": qty,
+                                },
+                                on_conflict="user_id,product_id",
+                            ).execute()
+                            existing = client.table("cart_items").select("id, quantity").eq(
+                                "user_id", user["id"]
+                            ).eq("product_id", p["id"]).execute().data
+                            if existing:
+                                client.table("cart_items").update({
+                                    "quantity": existing[0]["quantity"] + qty
+                                }).eq("id", existing[0]["id"]).execute()
+                            st.success(f"Added {qty} × {p['name']} to cart!")
+                        except Exception as e:
+                            st.error(f"Failed: {e}")
