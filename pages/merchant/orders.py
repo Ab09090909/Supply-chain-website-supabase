@@ -52,7 +52,7 @@ def render_merchant_orders():
                         "Name": it["name"],
                         "Qty": it["quantity"],
                         "Unit Price": format_currency(it["unit_price"]),
-                        "Subtotal": format_currency(it["subtotal"]),
+                        "Subtotal": format_currency(it["unit_price"] * it["quantity"]),
                     }
                     for it in items
                 ], use_container_width=True, hide_index=True)
