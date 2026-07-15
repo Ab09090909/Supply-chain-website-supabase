@@ -107,6 +107,76 @@ _CSS = """
 .mp-card-price { font-size: 1.15rem; font-weight: 800; color: #047857; margin-bottom: 2px; }
 .mp-card-meta  { font-size: 0.7rem; color: #9ca3af; margin-bottom: 10px; }
 
+/* Button tray — snaps flush under card, same border-radius bottom */
+.mp-btn-tray {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.07);
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    padding: 8px 10px 10px;
+    margin-top: -6px;
+    margin-bottom: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.mp-btn-row { display: flex; gap: 5px; }
+
+/* Make Streamlit buttons inside tray compact */
+.mp-btn-tray [data-testid="stButton"] > button {
+    padding: 4px 8px !important;
+    font-size: 0.75rem !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    border-radius: 7px !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+}
+
+/* Remove extra gap Streamlit adds above/below buttons */
+.mp-btn-tray [data-testid="stButton"] {
+    margin: 0 !important;
+}
+.mp-btn-tray div[data-testid="column"] {
+    padding: 0 !important;
+    gap: 0 !important;
+}
+
+/* Card itself — remove bottom radius so tray connects seamlessly */
+.mp-card { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; margin-bottom: 0 !important; }
+
+/* Button tray — snaps flush under card */
+.mp-btn-tray {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.07);
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    padding: 7px 10px 10px;
+    margin-top: -4px;
+    margin-bottom: 18px;
+}
+
+/* Compact buttons inside tray */
+.mp-btn-tray [data-testid="stButton"] > button {
+    padding: 4px 8px !important;
+    font-size: 0.75rem !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    border-radius: 7px !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+}
+.mp-btn-tray [data-testid="stButton"] { margin: 0 !important; }
+.mp-btn-tray div[data-testid="column"] { padding: 0 !important; }
+.mp-btn-tray [data-testid="stVerticalBlockBorderWrapper"] { margin-bottom: 0 !important; }
+
+/* Card — flat bottom so tray attaches cleanly */
+.mp-card {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    margin-bottom: 0 !important;
+}
+
 /* Empty */
 .mp-empty {
     text-align: center; padding: 60px 16px; background: #fff;
@@ -244,7 +314,7 @@ def render_shared_marketplace():
             img_html = '<div class="mp-card-img-placeholder">📦</div>'
 
         with cols[i % 3]:
-            # Card HTML (static display portion)
+            # Card HTML (static display)
             st.html(f"""
             <div class="mp-card">
               {img_html}
@@ -258,10 +328,12 @@ def render_shared_marketplace():
             </div>
             """)
 
-            # Interactive buttons (must be outside HTML)
-            btn_col1, btn_col2 = st.columns(2)
+            # Button tray — styled to snap flush under the card
+            st.html('<div class="mp-btn-tray">')
+
+            btn_col1, btn_col2 = st.columns(2, gap="small")
             with btn_col1:
-                heart = "♥ Saved" if is_saved else "♡ Save"
+                heart   = "♥ Saved" if is_saved else "♡ Save"
                 fav_key = f"unfav_{p['id']}" if is_saved else f"fav_{p['id']}"
                 if st.button(heart, key=fav_key, use_container_width=True):
                     try:
@@ -298,3 +370,5 @@ def render_shared_marketplace():
                     "force_nav": "notifications",
                 })
                 st.rerun()
+
+            st.html('</div>')
