@@ -24,13 +24,15 @@ def get_current_role() -> Optional[str]:
     return user.get("role") if user else None
 
 
-def set_session(access_token: str, user: Dict[str, Any]) -> None:
+def set_session(access_token: str, user: Dict[str, Any], refresh_token: Optional[str] = None) -> None:
     st.session_state["access_token"] = access_token
     st.session_state["user"] = user
+    if refresh_token:
+        st.session_state["refresh_token"] = refresh_token
 
 
 def clear_session() -> None:
-    for key in ("access_token", "user"):
+    for key in ("access_token", "user", "refresh_token"):
         st.session_state.pop(key, None)
 
 
@@ -38,3 +40,21 @@ def require_role(*roles: str) -> bool:
     """Returns True if the current user has one of the allowed roles."""
     role = get_current_role()
     return role in roles if role else False
+
+
+def has_expired_jwt_error() -> bool:
+    """Return True if the last Supabase call returned a 401 with a JWT-expired message.
+
+    Set by supabase_lite when it sees a 401 + "JWT expired" in the body.
+    Used by app.py to auto-clear the session and force a re-login.
+    """
+    return bool(st.session_state.get("_jwt_expired", False))
+
+
+def mark_jwt_expired() -> None:
+    """Called by supabase_lite on a JWT-expired 401 response."""
+    st.session_state["_jwt_expired"] = True
+
+
+def clear_jwt_expired() -> None:
+    st.session_state.pop("_jwt_expired", None)
