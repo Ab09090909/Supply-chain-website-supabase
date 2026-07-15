@@ -5,8 +5,23 @@ Used for:
   â€¢ Product photos (when adding/editing products)
   â€¢ User avatars (when editing profile)
 
+FIXES (v5):
+  â€¢ **CRITICAL FIX**: use `content-type` (hyphen) in `file_options`, NOT
+    `content_type` (underscore). The real supabase-py 2.x merges
+    `file_options` over `DEFAULT_FILE_OPTIONS = {"content-type":
+    "text/plain;charset=UTF-8", ...}` and then does
+    `headers.pop("content-type")` to set the multipart file part's
+    Content-Type. Passing `content_type` (underscore) leaves the default
+    `text/plain;charset=UTF-8` in place, which Supabase Storage rejects
+    with `415 invalid_mime_type, mime type text/plain is not supported`
+    whenever the bucket has `allowed_mime_types` configured. This was the
+    cause of the avatar-upload failures in v4.
+  â€¢ Magic-byte sniffing fallback: if `uploaded_file.type` is missing or
+    looks suspicious, derive the MIME type from the first few bytes of the
+    file. Browsers usually get this right, but some mobile Chrome uploads
+    report the wrong type â€” sniffing makes us bulletproof.
+
 FIXES (v4):
-  â€¢ Correct file_options format (content_type with underscore, upsert as boolean)
   â€¢ Better error handling with specific error messages
   â€¢ Removed cache-bust query param that was breaking some Supabase Storage URLs
   â€¢ Added retry logic for transient failures
@@ -26,6 +41,30 @@ ALLOWED_MIME = ("image/jpeg", "image/png", "image/webp", "image/gif")
 ALLOWED_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif")
 
 
+def _sniff_mime_from_bytes(data: bytes) -> Optional[str]:
+    """Detect MIME type from the first few bytes (magic bytes).
+
+    Returns one of ALLOWED_MIME or None if not recognized as an image.
+    This is a safety net â€” Streamlit's `uploaded_file.type` is usually
+    correct, but mobile browsers occasionally misreport the type.
+    """
+    if not data or len(data) < 12:
+        return None
+    # JPEG: FF D8 FF
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    # PNG: 89 50 4E 47 0D 0A 1A 0A
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    # GIF: starts with "GIF87a" or "GIF89a"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    # WebP: "RIFF" .... "WEBP"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def upload_image(
     uploaded_file,
     folder: str = "products",
@@ -39,33 +78,41 @@ def upload_image(
         allowed_types: MIME types to accept
 
     Returns:
-        (public_url, error_message) â€” one of them is None on success/failure.
+        (public_url, error_message) Ã¢â‚¬â€ one of them is None on success/failure.
     """
     if uploaded_file is None:
         return None, "No file provided."
 
-    # --- Validate MIME type ---
-    file_type = getattr(uploaded_file, "type", None) or ""
-    if file_type and file_type not in allowed_types:
-        return None, f"Unsupported file type: {file_type}. Allowed: {', '.join(allowed_types)}"
+    # --- Read file bytes ONCE (used for both validation and upload) ---
+    file_bytes = uploaded_file.getvalue()
 
     # --- Validate file size ---
-    file_bytes = uploaded_file.getvalue()
     if len(file_bytes) > MAX_FILE_SIZE:
         return None, f"File too large ({len(file_bytes) / 1024 / 1024:.1f} MB). Maximum {MAX_FILE_SIZE / 1024 / 1024:.0f} MB."
 
     if len(file_bytes) == 0:
         return None, "File is empty."
 
-    # --- Determine file extension ---
-    original_name = getattr(uploaded_file, "name", "image.jpg")
-    ext = original_name.split(".")[-1].lower() if "." in original_name else "jpg"
-    if ext == "jpeg":
-        ext = "jpg"
-    if ext not in ALLOWED_EXTENSIONS:
-        ext = "jpg"
+    # --- Determine MIME type ---
+    # Priority: magic bytes > Streamlit's reported type > extension.
+    # Magic bytes are the ground truth â€” browsers sometimes report the
+    # wrong type, especially on mobile, which causes the Supabase
+    # `allowed_mime_types` check to reject the upload with 415.
+    file_type = getattr(uploaded_file, "type", None) or ""
+    sniffed = _sniff_mime_from_bytes(file_bytes)
+    if sniffed:
+        # Trust the bytes over the browser-reported type.
+        file_type = sniffed
+    elif file_type and file_type not in allowed_types:
+        # Bytes didn't look like a known image AND the browser says
+        # something weird. Refuse early with a helpful message.
+        return None, (
+            f"Unsupported file type: {file_type}. "
+            f"Allowed: {', '.join(allowed_types)}. "
+            "If this is a real image, try re-saving it as JPG or PNG."
+        )
 
-    # --- Determine content type ---
+    # If we still don't have a type, derive from the extension.
     if not file_type:
         content_type_map = {
             "jpg": "image/jpeg",
@@ -74,7 +121,26 @@ def upload_image(
             "webp": "image/webp",
             "gif": "image/gif",
         }
-        file_type = content_type_map.get(ext, "image/jpeg")
+        original_name = getattr(uploaded_file, "name", "image.jpg")
+        ext_guess = original_name.split(".")[-1].lower() if "." in original_name else "jpg"
+        if ext_guess == "jpeg":
+            ext_guess = "jpg"
+        file_type = content_type_map.get(ext_guess, "image/jpeg")
+
+    # --- Determine file extension (from name, fallback to MIME type) ---
+    original_name = getattr(uploaded_file, "name", "image.jpg")
+    ext = original_name.split(".")[-1].lower() if "." in original_name else ""
+    if ext == "jpeg":
+        ext = "jpg"
+    if ext not in ALLOWED_EXTENSIONS:
+        # Fall back to deriving ext from the final MIME type.
+        ext_from_mime = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+            "image/gif": "gif",
+        }.get(file_type, "jpg")
+        ext = ext_from_mime
 
     # --- Build a unique file path ---
     file_path = f"{folder}/{uuid4().hex}.{ext}"
@@ -85,22 +151,27 @@ def upload_image(
         try:
             client = get_supabase_client()
 
-            # IMPORTANT: pass upsert as the STRING "true", not bool True.
-            # The real supabase-py library converts `upsert` to the HTTP header
-            # `x-upsert`, and Python's http.client rejects non-string header
-            # values with: "Header value must be str or bytes, not <class 'bool'>".
-            # Using "true" (string) works with both supabase-py and supabase_lite.
-            # Also accept both "content_type" (underscore) and "content-type" (hyphen).
+            # IMPORTANT: pass `content-type` (HYPHEN), not `content_type`
+            # (underscore). The real supabase-py 2.x merges file_options
+            # over DEFAULT_FILE_OPTIONS which already contains
+            # `"content-type": "text/plain;charset=UTF-8"`. Only the
+            # hyphenated key will override that default. Using the
+            # underscored key leaves text/plain in place, which the
+            # `allowed_mime_types` bucket policy rejects with HTTP 415.
+            #
+            # Also pass `upsert` as the STRING "true" â€” supabase-py puts
+            # it into the `x-upsert` HTTP header, and httpx rejects
+            # non-string header values.
             response = client.storage.from_(BUCKET_NAME).upload(
                 path=file_path,
                 file=file_bytes,
                 file_options={
-                    "content_type": file_type,
-                    "upsert": "true",  # STRING, not bool â€” fixes Header value error
+                    "content-type": file_type,   # HYPHEN â€” overrides DEFAULT_FILE_OPTIONS
+                    "upsert": "true",            # STRING â€” httpx requires str header values
                 },
             )
 
-            # Get the public URL (NO cache-bust query param â€” it breaks some setups)
+            # Get the public URL (NO cache-bust query param Ã¢â‚¬â€ it breaks some setups)
             public_url = client.storage.from_(BUCKET_NAME).get_public_url(file_path)
 
             # Verify the URL is well-formed
@@ -147,8 +218,8 @@ def render_image_uploader(
 ) -> Tuple[Optional[str], Optional[str]]:
     """Render a Streamlit file_uploader + preview. Returns (final_url, error).
 
-    If user uploads a new file â†’ upload + return new URL.
-    If user keeps existing â†’ return current_url.
+    If user uploads a new file Ã¢â€ â€™ upload + return new URL.
+    If user keeps existing Ã¢â€ â€™ return current_url.
     Also allows pasting a URL as an alternative.
     """
     col1, col2 = st.columns([1, 2])
@@ -158,7 +229,7 @@ def render_image_uploader(
             try:
                 st.image(current_url, caption="Current image", use_container_width=True)
             except Exception:
-                st.markdown("ðŸ–¼ï¸ _Preview unavailable_")
+                st.markdown("Ã°Å¸â€“Â¼Ã¯Â¸Â _Preview unavailable_")
         else:
             st.markdown("*No image yet*")
 
@@ -184,7 +255,7 @@ def render_image_uploader(
             if err:
                 st.error(err)
                 return current_url, err
-            st.success("âœ… Image uploaded successfully!")
+            st.success("Ã¢Å“â€¦ Image uploaded successfully!")
             return new_url, None
         elif url_input.strip():
             return url_input.strip(), None
