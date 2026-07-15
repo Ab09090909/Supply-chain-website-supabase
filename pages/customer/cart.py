@@ -68,6 +68,27 @@ def render_customer_cart():
         st.markdown(f"### Total: {format_currency(total)}")
 
         if st.button("Place Order", type="primary", use_container_width=True):
+            # ---- Pre-flight check: is the session valid? ----
+            # The most common cause of RLS rejection on orders is a
+            # missing or expired JWT. Catch that early with a clear
+            # message instead of letting the user see a generic
+            # "RLS violation" error.
+            import streamlit as st
+            access_token = st.session_state.get("access_token")
+            if not access_token:
+                st.error(
+                    "❌ You are not signed in. Please log in again and retry. "
+                    "If the page looks like you're signed in, your session "
+                    "token may have expired — log out and log back in."
+                )
+                return
+            if not user.get("id"):
+                st.error(
+                    "❌ Your user profile is missing. Please log out and log "
+                    "back in. If that doesn't help, contact admin."
+                )
+                return
+
             try:
                 # Use first product's producer as the seller (simplified)
                 first_product = cart_items[0]["products"]
@@ -144,4 +165,25 @@ def render_customer_cart():
                 st.balloons()
                 st.rerun()
             except Exception as e:
-                st.error(f"Failed to place order: {e}")
+                err = str(e)
+                # Most common cause: RLS rejection. Explain the fix.
+                if "row-level security" in err.lower() or "42501" in err:
+                    st.error(
+                        f"❌ **Order blocked by RLS policy**\n\n"
+                        f"**What this means:** Supabase rejected the INSERT because "
+                        f"your user is not allowed to create orders in the database. "
+                        f"This is almost always one of these:\n\n"
+                        f"1. **The `migration_v7.sql` fix wasn't applied.** Run it in "
+                        f"Supabase SQL Editor — it tightens the RLS policies with "
+                        f"a NULL-safe `auth.uid()` check.\n\n"
+                        f"2. **Your JWT is malformed.** Try logging out and logging back in. "
+                        f"If you just rotated your Supabase keys, the JWT issuer may be "
+                        f"the old project.\n\n"
+                        f"3. **Your `profiles` row is missing.** Run "
+                        f"`supabase_sql/fix_signup_trigger.sql` to backfill any missing profiles.\n\n"
+                        f"**Diagnostic:** Run `supabase_sql/diagnose_rls.sql` in the "
+                        f"Supabase SQL Editor to find out exactly which check is failing.\n\n"
+                        f"Supabase response: `{err[:300]}`"
+                    )
+                else:
+                    st.error(f"Failed to place order: {err}")
