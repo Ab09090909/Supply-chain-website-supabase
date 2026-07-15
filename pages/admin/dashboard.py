@@ -5,209 +5,95 @@ import streamlit as st
 
 from auth.session import get_current_user
 from database.connection import get_supabase_admin_client, get_supabase_client
+from utils.ui import page_header, metric_card
 from utils.helpers import format_currency
 from utils.db_health import render_db_health_warning
 
 
-# ── Theme-aware palette ───────────────────────────────────────────────────────
-def _palette():
-    """Return color tokens based on current theme in session_state."""
-    is_dark = st.session_state.get("dark_mode", True)
-
-    if is_dark:
-        return dict(
-            BG       = "#0F172A",
-            SURFACE  = "#1E293B",
-            BORDER   = "#2D3F55",
-            TEXT_PRI = "#F1F5F9",
-            TEXT_SEC = "#64748B",
-            HERO_TOP = "linear-gradient(135deg,#1E293B 0%,#0F172A 70%)",
-            TABLE_HD = "#0D1B2E",
-        )
-    else:
-        return dict(
-            BG       = "#F8FAFC",
-            SURFACE  = "#FFFFFF",
-            BORDER   = "#E2E8F0",
-            TEXT_PRI = "#0F172A",
-            TEXT_SEC = "#64748B",
-            HERO_TOP = "linear-gradient(135deg,#EFF6FF 0%,#F8FAFC 70%)",
-            TABLE_HD = "#F1F5F9",
-        )
-
-# Accent colors stay the same in both themes
-GREEN  = "#16A34A"
-BLUE   = "#2563EB"
-PURPLE = "#7C3AED"
-AMBER  = "#D97706"
-RED    = "#DC2626"
-
-# Lighter tints for light-mode accent bars / borders
-GREEN_L  = "#22C55E"
-BLUE_L   = "#3B82F6"
-PURPLE_L = "#8B5CF6"
-AMBER_L  = "#F59E0B"
-RED_L    = "#EF4444"
-
-
-def _css(p: dict):
-    st.markdown(f"""
+def _inject_styles():
+    st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-[data-testid="stAppViewContainer"],
-[data-testid="stMain"],
-.main .block-container {{
-    background: {p['BG']} !important;
+/* Global font */
+html, body, [class*="css"], [data-testid] {
     font-family: 'Inter', sans-serif !important;
-}}
-[data-testid="stHeader"] {{ background: transparent !important; }}
-section[data-testid="stSidebar"] {{
-    background: {p['BG']} !important;
-    border-right: 1px solid {p['BORDER']};
-}}
-.block-container {{ padding-top: 1.5rem !important; }}
+}
 
-/* st.metric card */
-[data-testid="stMetric"] {{
-    background: {p['SURFACE']};
-    border: 1px solid {p['BORDER']};
-    border-radius: 14px;
-    padding: 20px 18px 16px !important;
-    min-height: 110px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.06);
-}}
-[data-testid="stMetricValue"] {{
-    color: {p['TEXT_PRI']} !important;
-    font-size: 2rem !important;
+/* Tighten page top padding */
+.block-container {
+    padding-top: 1.2rem !important;
+    padding-bottom: 2rem !important;
+}
+
+/* st.metric — cleaner card feel */
+[data-testid="stMetric"] {
+    border-radius: 12px;
+    padding: 16px 18px !important;
+    border: 1px solid rgba(128,128,128,0.15);
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.8rem !important;
     font-weight: 800 !important;
-    letter-spacing: -0.03em !important;
-    font-family: 'Inter', sans-serif !important;
-}}
-[data-testid="stMetricLabel"] {{
-    color: {p['TEXT_SEC']} !important;
-    font-size: 10px !important;
+    letter-spacing: -0.02em !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 11px !important;
     font-weight: 600 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.1em !important;
-    font-family: 'Inter', sans-serif !important;
-}}
-[data-testid="stMetricDelta"] {{ display: none; }}
+    letter-spacing: 0.09em !important;
+    opacity: 0.6;
+}
+[data-testid="stMetricDelta"] { display: none; }
 
-/* Dataframe */
-[data-testid="stDataFrame"] {{
-    border-radius: 14px !important;
-    border: 1px solid {p['BORDER']} !important;
-    overflow: hidden;
-}}
-[data-testid="stDataFrame"] th {{
-    background: {p['TABLE_HD']} !important;
-    color: {p['TEXT_SEC']} !important;
-    font-size: 11px !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.08em !important;
-    font-family: 'Inter', sans-serif !important;
-}}
-[data-testid="stDataFrame"] td {{
-    color: {p['TEXT_PRI']} !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 13px !important;
-}}
-
-[data-testid="stAlert"] {{
-    background: {p['SURFACE']} !important;
+/* Dataframe — rounder, cleaner */
+[data-testid="stDataFrame"] {
     border-radius: 12px !important;
-    color: {p['TEXT_PRI']} !important;
-}}
-hr {{ border-color: {p['BORDER']} !important; margin: 4px 0 !important; }}
+    border: 1px solid rgba(128,128,128,0.15) !important;
+    overflow: hidden;
+}
+[data-testid="stDataFrame"] th {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.09em !important;
+    opacity: 0.6;
+}
+[data-testid="stDataFrame"] td {
+    font-size: 13px !important;
+    font-weight: 500 !important;
+}
+
+/* Section labels */
+.adm-section {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    opacity: 0.5;
+    margin: 20px 0 10px;
+    font-family: Inter, sans-serif;
+}
+
+/* Divider */
+hr { opacity: 0.12 !important; margin: 8px 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
-def _hero(p: dict):
-    st.markdown(f"""
-<div style="
-    background:{p['HERO_TOP']};
-    border:1px solid {p['BORDER']};
-    border-top:3px solid {GREEN_L};
-    border-radius:16px;
-    padding:28px 32px 24px;
-    margin-bottom:8px;
-    font-family:Inter,sans-serif;
-">
-    <div style="font-size:11px;font-weight:700;letter-spacing:.12em;
-                text-transform:uppercase;color:{GREEN};margin-bottom:6px;">
-        🌍 Ethiopian AI Supply Chain
-    </div>
-    <div style="font-size:26px;font-weight:800;color:{p['TEXT_PRI']};
-                line-height:1.2;margin-bottom:6px;">
-        Admin Dashboard
-    </div>
-    <div style="font-size:13px;color:{p['TEXT_SEC']};margin-bottom:14px;">
-        Platform-wide analytics, user management &amp; system health
-    </div>
-    <span style="background:#dcfce7;color:{GREEN};font-size:11px;font-weight:700;
-                 padding:3px 12px;border-radius:20px;border:1px solid #bbf7d0;">
-        ● Live
-    </span>
-</div>
-""", unsafe_allow_html=True)
+def _section(label: str):
+    st.markdown(f'<div class="adm-section">{label}</div>', unsafe_allow_html=True)
 
 
-def _section_label(text: str, p: dict):
-    st.markdown(f"""
-<div style="font-size:11px;font-weight:700;color:{p['TEXT_SEC']};
-            text-transform:uppercase;letter-spacing:.12em;
-            margin:24px 0 10px;font-family:Inter,sans-serif;
-            display:flex;align-items:center;gap:8px;">
-    {text}
-    <div style="flex:1;height:1px;background:{p['BORDER']};margin-left:6px;"></div>
-</div>
-""", unsafe_allow_html=True)
-
-
-def _accent_bar(color: str):
-    st.markdown(
-        f'<div style="height:3px;background:{color};border-radius:6px;margin-bottom:2px;"></div>',
-        unsafe_allow_html=True,
-    )
-
-
-def _role_block(role: str, count: int, icon: str, color: str, p: dict):
-    st.markdown(f"""
-<div style="
-    background:{p['SURFACE']};
-    border:1px solid {p['BORDER']};
-    border-top:3px solid {color};
-    border-radius:12px;
-    padding:18px 12px;
-    text-align:center;
-    font-family:Inter,sans-serif;
-    box-shadow:0 1px 3px rgba(0,0,0,.05);
-">
-    <div style="font-size:24px;margin-bottom:6px;">{icon}</div>
-    <div style="font-size:28px;font-weight:800;color:{p['TEXT_PRI']};
-                line-height:1;letter-spacing:-0.02em;">{count}</div>
-    <div style="font-size:10px;font-weight:700;color:{p['TEXT_SEC']};
-                text-transform:uppercase;letter-spacing:.1em;margin-top:5px;">
-        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;
-                     background:{color};margin-right:5px;vertical-align:middle;"></span>
-        {role}
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 def render_admin_dashboard():
-    p = _palette()          # read theme once; pass to every component
-    _css(p)
-    _hero(p)
+    _inject_styles()
+    page_header("Admin Dashboard", "Platform-wide overview and system health")
 
     user = get_current_user()
     if not user:
         return
 
+    # Try admin client first; fall back to anon client (RLS-limited)
     try:
         client = get_supabase_admin_client()
     except Exception:
@@ -220,67 +106,70 @@ def render_admin_dashboard():
         fraud    = client.table("fraud_logs").select("*").execute().data or []
     except Exception as e:
         err = str(e)
-        if "401" in err or "invalid api key" in err.lower():
+        if "401" in err or "Invalid API key" in err or "invalid api key" in err.lower():
             st.error("❌ Admin access failed: Invalid Supabase API key.")
             st.info(
-                "**To fix:** Check Streamlit secrets:\n"
-                "- `SUPABASE_URL`\n- `SUPABASE_ANON_KEY`\n- `SUPABASE_SERVICE_ROLE_KEY`\n\n"
-                "Get these from **Supabase Dashboard → Project Settings → API**"
+                "**To fix this:** Check your Supabase credentials in Streamlit secrets:\n\n"
+                "1. `SUPABASE_URL` — your project URL\n"
+                "2. `SUPABASE_ANON_KEY` — the anon public key (NOT the service_role key)\n"
+                "3. `SUPABASE_SERVICE_ROLE_KEY` — the service_role key (for admin features)\n\n"
+                "Get these from: **Supabase Dashboard → Project Settings → API**\n\n"
+                "The admin dashboard needs the **service_role key** to see all users. "
+                "If you only have the anon key, admin features will be limited by RLS."
             )
         elif "PGRST205" in err or "could not find" in err.lower():
             st.error("❌ Database tables are missing.")
-            st.info("Run `supabase/schema.sql` and `supabase/policies.sql` in your Supabase SQL Editor.")
+            st.info("Run `supabase/schema.sql` and `supabase/policies.sql` in your Supabase SQL Editor first.")
             render_db_health_warning()
         else:
             st.error(f"Failed to load stats: {e}")
         return
 
-    # ── Derived stats ─────────────────────────────────────────────────────────
+    # Counts by role
     role_counts = {"producer": 0, "merchant": 0, "customer": 0, "admin": 0}
     for u in users:
-        r = u.get("role", "customer")
-        role_counts[r] = role_counts.get(r, 0) + 1
+        role_counts[u.get("role", "customer")] = role_counts.get(u.get("role", "customer"), 0) + 1
 
-    total_revenue   = sum(float(o["total"]) for o in orders if o["payment_status"] == "paid")
-    pending_fraud   = sum(1 for f in fraud if f["status"] == "pending")
-    total_orders    = len(orders)
-    active_products = sum(1 for p_item in products if p_item.get("is_active", True))
-    fraud_accent    = RED_L if pending_fraud > 0 else GREEN_L
+    total_revenue = sum(float(o["total"]) for o in orders if o["payment_status"] == "paid")
+    pending_fraud = sum(1 for f in fraud if f["status"] == "pending")
 
-    # ── KPI strip ─────────────────────────────────────────────────────────────
-    _section_label("Key Metrics", p)
-    kpis = [
-        ("👥 Total Users",  str(len(users)),                GREEN_L),
-        ("📦 Products",     str(active_products),           BLUE_L),
-        ("🛒 Orders",       str(total_orders),              PURPLE_L),
-        ("💰 Revenue",      format_currency(total_revenue), AMBER_L),
-        ("🚨 Fraud Alerts", str(pending_fraud),             fraud_accent),
-    ]
-    for col, (label, value, color) in zip(st.columns(5), kpis):
-        with col:
-            _accent_bar(color)
-            st.metric(label=label, value=value)
+    # ── KPI cards ─────────────────────────────────────────────────────────────
+    _section("Key Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        metric_card("Total Users", str(len(users)), icon="👥")
+    with col2:
+        metric_card("Products", str(len(products)), icon="📦")
+    with col3:
+        metric_card("Revenue", format_currency(total_revenue), icon="💰")
+    with col4:
+        metric_card(
+            "Fraud Alerts", str(pending_fraud), icon="🚨",
+            color="#ef4444" if pending_fraud > 0 else "#10b981",
+        )
 
-    # ── Role cards ────────────────────────────────────────────────────────────
-    _section_label("Users by Role", p)
-    role_meta = {
-        "producer": ("🌾", GREEN_L),
-        "merchant": ("🏪", BLUE_L),
-        "customer": ("👤", PURPLE_L),
-        "admin":    ("🛡️",  AMBER_L),
-    }
-    for col, (role, count) in zip(st.columns(4), role_counts.items()):
-        icon, color = role_meta.get(role, ("👤", "#64748B"))
-        with col:
-            _role_block(role.capitalize(), count, icon, color, p)
+    st.markdown("---")
+
+    # ── Users by role ──────────────────────────────────────────────────────────
+    _section("Users by Role")
+    role_icons = {"producer": "🌾", "merchant": "🏪", "customer": "👤", "admin": "🛡️"}
+    role_cols = st.columns(4)
+    for i, (role, count) in enumerate(role_counts.items()):
+        with role_cols[i]:
+            st.metric(
+                label=f"{role_icons.get(role, '')} {role.capitalize()}",
+                value=count,
+            )
+
+    st.markdown("---")
 
     # ── Recent orders ──────────────────────────────────────────────────────────
-    _section_label("Recent Orders", p)
+    _section("Recent Orders")
     if orders:
         st.dataframe(
             [
                 {
-                    "Order #": o.get("order_number", "—"),
+                    "Order #": o["order_number"],
                     "Total":   format_currency(o["total"]),
                     "Status":  o["status"].title(),
                     "Payment": o["payment_status"].title(),
