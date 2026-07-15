@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 import sys
 import importlib.util
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -41,10 +40,10 @@ def _load_create_client():
     """Load create_client from supabase-py OR supabase_lite. Always returns a callable."""
     # Strategy A: Try the real supabase package
     try:
-        import supabase as _supabase_mod
-        _cc = getattr(_supabase_mod, "create_client", None)
-        if callable(_cc):
-            return _cc, getattr(_supabase_mod, "Client", object)
+        import supabase as _supabase_mod  # noqa: F401
+        from supabase import create_client as _cc
+        from supabase import Client as _Client
+        return _cc, _Client
     except Exception:
         pass
 
@@ -63,17 +62,13 @@ def _load_create_client():
         except Exception:
             pass
 
-    # Strategy C: Try standard imports
-    for imp_str in [
-        "from database.supabase_lite import create_client, Client",
-        "from .supabase_lite import create_client, Client",
-    ]:
-        try:
-            exec(imp_str, globals())
-            if "create_client" in globals() and callable(globals()["create_client"]):
-                return globals()["create_client"], globals().get("Client", object)
-        except Exception:
-            continue
+    # Strategy C: Standard package import
+    try:
+        from database.supabase_lite import create_client as _cc
+        from database.supabase_lite import Client as _Client
+        return _cc, _Client
+    except Exception:
+        pass
 
     return None, None
 
@@ -108,23 +103,39 @@ _KEY_ALIASES = {
 
 
 def _get_config(key: str) -> Optional[str]:
+    """Look up a config value, accepting several aliases and rejecting
+    obvious placeholder values like ``your-…`` or ``eyJ-replace-…``.
+
+    Order: 1) os.environ, 2) st.secrets, 3) .streamlit/secrets.toml.
+    """
     aliases = _KEY_ALIASES.get(key, [key])
+    # Reject any value that looks like a placeholder
+    placeholder_prefixes = ("your-", "eyJ-replace", "gsk-replace", "replace-")
+
+    def _is_real(val) -> bool:
+        if not val:
+            return False
+        s = str(val).strip()
+        if not s:
+            return False
+        return not any(s.startswith(p) for p in placeholder_prefixes)
+
     for alias in aliases:
         val = os.environ.get(alias)
-        if val and not val.startswith("your-"):
+        if _is_real(val):
             return val
     if st is not None:
         try:
             for alias in aliases:
                 val = st.secrets.get(alias)
-                if val and not str(val).startswith("your-"):
+                if _is_real(val):
                     return str(val)
         except Exception:
             pass
     secrets = _read_secrets_toml()
     for alias in aliases:
         val = secrets.get(alias)
-        if val and not str(val).startswith("your-"):
+        if _is_real(val):
             return str(val)
     return None
 
@@ -140,9 +151,16 @@ def _debug_config_status() -> dict:
     }
 
 
-@lru_cache(maxsize=1)
 def get_supabase_client():
-    """User-scoped Supabase client (RLS enforced)."""
+    """User-scoped Supabase client (RLS enforced).
+
+    Returns a *fresh* client on every call so that the auth token attached
+    to the underlying transport is always read from the current Streamlit
+    session. Streamlit workers are long-lived and reused across many users;
+    caching this object at module scope would let one user's tokens leak
+    into another user's requests (the ``supabase_lite`` transport stores
+    the access token on the client instance).
+    """
     if create_client is None:
         raise RuntimeError(
             "Could not load the Supabase client. The `supabase` package is not installed "
@@ -153,20 +171,52 @@ def get_supabase_client():
     key = _get_config("SUPABASE_ANON_KEY")
     if not url or not key:
         raise RuntimeError("Supabase credentials not found. Set SUPABASE_URL and SUPABASE_ANON_KEY in secrets.")
-    return create_client(url, key)
+    client = create_client(url, key)
+    # Bind the current session's access token (if any) onto the new client
+    # so subsequent REST calls use the right user identity. We read from
+    # st.session_state rather than threading the token through every call
+    # site, because Streamlit guarantees a stable session per browser.
+    try:
+        if st is not None:
+            tok = st.session_state.get("access_token")
+            if tok and getattr(client, "auth", None) is not None:
+                client.auth._access_token = tok
+                client.auth._refresh_token = st.session_state.get("refresh_token")
+    except Exception:
+        # Non-fatal: client will still work with anon key
+        pass
+    return client
 
 
-@lru_cache(maxsize=1)
 def get_supabase_admin_client():
-    """Admin Supabase client (service_role key). Falls back to anon if missing."""
+    """Admin Supabase client (service_role key, bypasses RLS).
+
+    IMPORTANT: this client should ONLY be used from server-side admin
+    code paths. It is intentionally NOT cached at module scope so the
+    token cannot bleed across user sessions. There is no automatic
+    fallback to the anon client — if the service_role key is missing,
+    callers must handle that (and they should, because a missing
+    service_role key is a configuration error, not a runtime fallback).
+    """
     if create_client is None:
-        return get_supabase_client()
+        raise RuntimeError(
+            "Could not load the Supabase client. The `supabase` package "
+            "is not installed AND `database/supabase_lite.py` could not "
+            "be loaded."
+        )
     url = _get_config("SUPABASE_URL")
     key = _get_config("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
-        return get_supabase_client()
-    if key.startswith("gsk_"):
-        return get_supabase_client()
+        raise RuntimeError(
+            "Admin client requested but SUPABASE_SERVICE_ROLE_KEY is not set. "
+            "Add it to .streamlit/secrets.toml (or Streamlit Cloud Secrets)."
+        )
+    # Defence in depth: never accept a Groq key in this slot
+    if str(key).startswith("gsk_"):
+        raise RuntimeError(
+            "SUPABASE_SERVICE_ROLE_KEY starts with 'gsk_'. That looks like a "
+            "Groq key. Put your Supabase service_role key (starts with 'eyJ') here."
+        )
     return create_client(url, key)
 
 
