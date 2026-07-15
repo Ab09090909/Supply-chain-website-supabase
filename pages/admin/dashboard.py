@@ -9,57 +9,83 @@ from utils.helpers import format_currency
 from utils.db_health import render_db_health_warning
 
 
-# ── Palette ──────────────────────────────────────────────────────────────────
-BG        = "#0F172A"   # page background
-SURFACE   = "#1E293B"   # card background
-BORDER    = "#2D3F55"   # card border
-TEXT_PRI  = "#F1F5F9"   # primary text
-TEXT_SEC  = "#64748B"   # muted label
-GREEN     = "#22C55E"
-BLUE      = "#3B82F6"
-PURPLE    = "#8B5CF6"
-AMBER     = "#F59E0B"
-RED       = "#EF4444"
+# ── Theme-aware palette ───────────────────────────────────────────────────────
+def _palette():
+    """Return color tokens based on current theme in session_state."""
+    is_dark = st.session_state.get("dark_mode", True)
+
+    if is_dark:
+        return dict(
+            BG       = "#0F172A",
+            SURFACE  = "#1E293B",
+            BORDER   = "#2D3F55",
+            TEXT_PRI = "#F1F5F9",
+            TEXT_SEC = "#64748B",
+            HERO_TOP = "linear-gradient(135deg,#1E293B 0%,#0F172A 70%)",
+            TABLE_HD = "#0D1B2E",
+        )
+    else:
+        return dict(
+            BG       = "#F8FAFC",
+            SURFACE  = "#FFFFFF",
+            BORDER   = "#E2E8F0",
+            TEXT_PRI = "#0F172A",
+            TEXT_SEC = "#64748B",
+            HERO_TOP = "linear-gradient(135deg,#EFF6FF 0%,#F8FAFC 70%)",
+            TABLE_HD = "#F1F5F9",
+        )
+
+# Accent colors stay the same in both themes
+GREEN  = "#16A34A"
+BLUE   = "#2563EB"
+PURPLE = "#7C3AED"
+AMBER  = "#D97706"
+RED    = "#DC2626"
+
+# Lighter tints for light-mode accent bars / borders
+GREEN_L  = "#22C55E"
+BLUE_L   = "#3B82F6"
+PURPLE_L = "#8B5CF6"
+AMBER_L  = "#F59E0B"
+RED_L    = "#EF4444"
 
 
-def _css():
+def _css(p: dict):
     st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* Page background */
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"],
 .main .block-container {{
-    background: {BG} !important;
+    background: {p['BG']} !important;
     font-family: 'Inter', sans-serif !important;
 }}
 [data-testid="stHeader"] {{ background: transparent !important; }}
 section[data-testid="stSidebar"] {{
-    background: {BG} !important;
-    border-right: 1px solid {SURFACE};
+    background: {p['BG']} !important;
+    border-right: 1px solid {p['BORDER']};
 }}
-
-/* Kill default white block padding */
 .block-container {{ padding-top: 1.5rem !important; }}
 
-/* Native st.metric → styled card */
+/* st.metric card */
 [data-testid="stMetric"] {{
-    background: {SURFACE};
-    border: 1px solid {BORDER};
+    background: {p['SURFACE']};
+    border: 1px solid {p['BORDER']};
     border-radius: 14px;
     padding: 20px 18px 16px !important;
     min-height: 110px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
 }}
 [data-testid="stMetricValue"] {{
-    color: {TEXT_PRI} !important;
+    color: {p['TEXT_PRI']} !important;
     font-size: 2rem !important;
     font-weight: 800 !important;
     letter-spacing: -0.03em !important;
     font-family: 'Inter', sans-serif !important;
 }}
 [data-testid="stMetricLabel"] {{
-    color: {TEXT_SEC} !important;
+    color: {p['TEXT_SEC']} !important;
     font-size: 10px !important;
     font-weight: 600 !important;
     text-transform: uppercase !important;
@@ -71,103 +97,98 @@ section[data-testid="stSidebar"] {{
 /* Dataframe */
 [data-testid="stDataFrame"] {{
     border-radius: 14px !important;
-    border: 1px solid {BORDER} !important;
+    border: 1px solid {p['BORDER']} !important;
     overflow: hidden;
 }}
 [data-testid="stDataFrame"] th {{
-    background: #0D1B2E !important;
-    color: {TEXT_SEC} !important;
+    background: {p['TABLE_HD']} !important;
+    color: {p['TEXT_SEC']} !important;
     font-size: 11px !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
     font-family: 'Inter', sans-serif !important;
 }}
 [data-testid="stDataFrame"] td {{
-    color: #CBD5E1 !important;
+    color: {p['TEXT_PRI']} !important;
     font-family: 'Inter', sans-serif !important;
     font-size: 13px !important;
 }}
 
-/* Alerts */
 [data-testid="stAlert"] {{
-    background: {SURFACE} !important;
+    background: {p['SURFACE']} !important;
     border-radius: 12px !important;
-    color: {TEXT_PRI} !important;
+    color: {p['TEXT_PRI']} !important;
 }}
-
-/* Divider */
-hr {{ border-color: {SURFACE} !important; margin: 4px 0 !important; }}
+hr {{ border-color: {p['BORDER']} !important; margin: 4px 0 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 
-def _hero():
-    """Header banner — pure inline styles, no class dependencies."""
+def _hero(p: dict):
     st.markdown(f"""
 <div style="
-    background: linear-gradient(135deg, {SURFACE} 0%, {BG} 70%);
-    border: 1px solid {BORDER};
-    border-top: 3px solid {GREEN};
-    border-radius: 16px;
-    padding: 28px 32px 24px;
-    margin-bottom: 8px;
-    font-family: Inter, sans-serif;
+    background:{p['HERO_TOP']};
+    border:1px solid {p['BORDER']};
+    border-top:3px solid {GREEN_L};
+    border-radius:16px;
+    padding:28px 32px 24px;
+    margin-bottom:8px;
+    font-family:Inter,sans-serif;
 ">
     <div style="font-size:11px;font-weight:700;letter-spacing:.12em;
                 text-transform:uppercase;color:{GREEN};margin-bottom:6px;">
         🌍 Ethiopian AI Supply Chain
     </div>
-    <div style="font-size:26px;font-weight:800;color:{TEXT_PRI};
+    <div style="font-size:26px;font-weight:800;color:{p['TEXT_PRI']};
                 line-height:1.2;margin-bottom:6px;">
         Admin Dashboard
     </div>
-    <div style="font-size:13px;color:{TEXT_SEC};margin-bottom:14px;">
+    <div style="font-size:13px;color:{p['TEXT_SEC']};margin-bottom:14px;">
         Platform-wide analytics, user management &amp; system health
     </div>
-    <span style="background:#14532d;color:{GREEN};font-size:11px;font-weight:700;
-                 padding:3px 12px;border-radius:20px;border:1px solid #16a34a55;">
+    <span style="background:#dcfce7;color:{GREEN};font-size:11px;font-weight:700;
+                 padding:3px 12px;border-radius:20px;border:1px solid #bbf7d0;">
         ● Live
     </span>
 </div>
 """, unsafe_allow_html=True)
 
 
-def _section_label(text: str):
+def _section_label(text: str, p: dict):
     st.markdown(f"""
-<div style="font-size:11px;font-weight:700;color:{TEXT_SEC};
+<div style="font-size:11px;font-weight:700;color:{p['TEXT_SEC']};
             text-transform:uppercase;letter-spacing:.12em;
             margin:24px 0 10px;font-family:Inter,sans-serif;
             display:flex;align-items:center;gap:8px;">
     {text}
-    <div style="flex:1;height:1px;background:{SURFACE};margin-left:6px;"></div>
+    <div style="flex:1;height:1px;background:{p['BORDER']};margin-left:6px;"></div>
 </div>
 """, unsafe_allow_html=True)
 
 
 def _accent_bar(color: str):
-    """Thin colored top-bar above a metric card via a zero-height div."""
-    st.markdown(f"""
-<div style="height:3px;background:{color};border-radius:6px;
-            margin-bottom:2px;"></div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="height:3px;background:{color};border-radius:6px;margin-bottom:2px;"></div>',
+        unsafe_allow_html=True,
+    )
 
 
-def _role_block(role: str, count: int, icon: str, color: str):
-    """Role summary card — pure inline styles."""
+def _role_block(role: str, count: int, icon: str, color: str, p: dict):
     st.markdown(f"""
 <div style="
-    background:{SURFACE};
-    border:1px solid {BORDER};
+    background:{p['SURFACE']};
+    border:1px solid {p['BORDER']};
     border-top:3px solid {color};
     border-radius:12px;
     padding:18px 12px;
     text-align:center;
     font-family:Inter,sans-serif;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);
 ">
     <div style="font-size:24px;margin-bottom:6px;">{icon}</div>
-    <div style="font-size:28px;font-weight:800;color:{TEXT_PRI};
+    <div style="font-size:28px;font-weight:800;color:{p['TEXT_PRI']};
                 line-height:1;letter-spacing:-0.02em;">{count}</div>
-    <div style="font-size:10px;font-weight:700;color:{TEXT_SEC};
+    <div style="font-size:10px;font-weight:700;color:{p['TEXT_SEC']};
                 text-transform:uppercase;letter-spacing:.1em;margin-top:5px;">
         <span style="display:inline-block;width:6px;height:6px;border-radius:50%;
                      background:{color};margin-right:5px;vertical-align:middle;"></span>
@@ -179,8 +200,9 @@ def _role_block(role: str, count: int, icon: str, color: str):
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 def render_admin_dashboard():
-    _css()
-    _hero()
+    p = _palette()          # read theme once; pass to every component
+    _css(p)
+    _hero(p)
 
     user = get_current_user()
     if not user:
@@ -213,7 +235,7 @@ def render_admin_dashboard():
             st.error(f"Failed to load stats: {e}")
         return
 
-    # ── Derived ──────────────────────────────────────────────────────────────
+    # ── Derived stats ─────────────────────────────────────────────────────────
     role_counts = {"producer": 0, "merchant": 0, "customer": 0, "admin": 0}
     for u in users:
         r = u.get("role", "customer")
@@ -222,41 +244,38 @@ def render_admin_dashboard():
     total_revenue   = sum(float(o["total"]) for o in orders if o["payment_status"] == "paid")
     pending_fraud   = sum(1 for f in fraud if f["status"] == "pending")
     total_orders    = len(orders)
-    active_products = sum(1 for p in products if p.get("is_active", True))
-    fraud_color     = RED if pending_fraud > 0 else GREEN
+    active_products = sum(1 for p_item in products if p_item.get("is_active", True))
+    fraud_accent    = RED_L if pending_fraud > 0 else GREEN_L
 
-    # ── KPI row ──────────────────────────────────────────────────────────────
-    _section_label("Key Metrics")
-
+    # ── KPI strip ─────────────────────────────────────────────────────────────
+    _section_label("Key Metrics", p)
     kpis = [
-        ("👥 Total Users",   str(len(users)),                GREEN),
-        ("📦 Products",      str(active_products),           BLUE),
-        ("🛒 Orders",        str(total_orders),              PURPLE),
-        ("💰 Revenue",       format_currency(total_revenue), AMBER),
-        ("🚨 Fraud Alerts",  str(pending_fraud),             fraud_color),
+        ("👥 Total Users",  str(len(users)),                GREEN_L),
+        ("📦 Products",     str(active_products),           BLUE_L),
+        ("🛒 Orders",       str(total_orders),              PURPLE_L),
+        ("💰 Revenue",      format_currency(total_revenue), AMBER_L),
+        ("🚨 Fraud Alerts", str(pending_fraud),             fraud_accent),
     ]
-    cols = st.columns(5)
-    for col, (label, value, color) in zip(cols, kpis):
+    for col, (label, value, color) in zip(st.columns(5), kpis):
         with col:
             _accent_bar(color)
             st.metric(label=label, value=value)
 
-    # ── Role cards ───────────────────────────────────────────────────────────
-    _section_label("Users by Role")
+    # ── Role cards ────────────────────────────────────────────────────────────
+    _section_label("Users by Role", p)
     role_meta = {
-        "producer": ("🌾", GREEN),
-        "merchant": ("🏪", BLUE),
-        "customer": ("👤", PURPLE),
-        "admin":    ("🛡️",  AMBER),
+        "producer": ("🌾", GREEN_L),
+        "merchant": ("🏪", BLUE_L),
+        "customer": ("👤", PURPLE_L),
+        "admin":    ("🛡️",  AMBER_L),
     }
-    rc = st.columns(4)
-    for col, (role, count) in zip(rc, role_counts.items()):
-        icon, color = role_meta.get(role, ("👤", TEXT_SEC))
+    for col, (role, count) in zip(st.columns(4), role_counts.items()):
+        icon, color = role_meta.get(role, ("👤", "#64748B"))
         with col:
-            _role_block(role.capitalize(), count, icon, color)
+            _role_block(role.capitalize(), count, icon, color, p)
 
-    # ── Recent orders ────────────────────────────────────────────────────────
-    _section_label("Recent Orders")
+    # ── Recent orders ──────────────────────────────────────────────────────────
+    _section_label("Recent Orders", p)
     if orders:
         st.dataframe(
             [
