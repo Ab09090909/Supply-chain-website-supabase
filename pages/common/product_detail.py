@@ -538,3 +538,13 @@ def _place_order(
 
     except Exception as e:
         st.error(f"Failed to place order: {e}")
+
+
+    # ---- Reviews & ratings section (verified-buyer reviews) ----
+    try:
+        from utils.reviews_ui import render_product_reviews
+        st.markdown("---")
+        render_product_reviews(product_id, product, user)
+    except Exception as e:
+        # Non-fatal — the page still works without reviews
+        pass
