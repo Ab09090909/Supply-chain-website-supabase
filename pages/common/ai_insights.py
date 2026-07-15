@@ -184,7 +184,11 @@ def _render_demand_forecast():
             "Avg Daily": f.get("avg_daily_demand", 0),
             "Trend": f.get("trend", ""),
             "Confidence": f"{f.get('confidence', 0) * 100:.0f}%",
-            "Accuracy (MAPE)": _format_mape(selected.get("accuracy") if selected else None),
+            # Look up the accuracy from THIS row's forecast dict, not
+            # from the "selected" product — that variable only exists
+            # inside the per-product chart branch above and is
+            # undefined here when there are no trained forecasts.
+            "Accuracy (MAPE)": _format_mape(f.get("accuracy")),
             "Samples": f.get("samples", 0),
             "Method": f.get("method", ""),
         }
