@@ -1,5 +1,5 @@
 """
-Product Detail page — full product view with producer business card,
+Product Detail page â€” full product view with producer business card,
 order form, agreement preview, and confirm-agreement button.
 
 This is opened from the marketplace when a user clicks "Order" or "View Details".
@@ -19,7 +19,7 @@ from utils.constants import (
 
 def render_product_detail(product_id: str):
     """Render the full product detail view for a given product_id."""
-    page_header("📦 Product Details", "Full information, producer profile, and order form")
+    page_header("ðŸ“¦ Product Details", "Full information, producer profile, and order form")
 
     user = get_current_user()
     role = get_current_role()
@@ -47,8 +47,27 @@ def render_product_detail(product_id: str):
 
     producer = product.get("profiles") or {}
 
+    # FALLBACK: if the FK join didn't return producer data (RLS, missing FK,
+    # or PostgREST select-encoding issue), fetch the producer directly.
+    # This prevents a downstream KeyError: 'id' when placing an order.
+    if not producer.get("id"):
+        producer_id = product.get("producer_id")
+        if producer_id:
+            try:
+                prof_resp = (
+                    client.table("profiles")
+                    .select("*")
+                    .eq("id", producer_id)
+                    .maybe_single()
+                    .execute()
+                )
+                if prof_resp and prof_resp.data:
+                    producer = prof_resp.data
+            except Exception:
+                pass  # keep producer as {} â€” handled gracefully below
+
     # ---- Back button ----
-    if st.button("← Back to Marketplace", key="back_to_marketplace"):
+    if st.button("â† Back to Marketplace", key="back_to_marketplace"):
         st.session_state.pop("view_product_id", None)
         st.session_state["force_nav"] = "marketplace"
         st.rerun()
@@ -62,36 +81,36 @@ def render_product_detail(product_id: str):
             try:
                 st.image(image_url, use_container_width=True)
             except Exception:
-                st.markdown("📦 _Image unavailable_")
+                st.markdown("ðŸ“¦ _Image unavailable_")
         else:
             st.markdown(
                 "<div style='height:240px; background:#f1f5f9; border-radius:12px; "
                 "display:flex; align-items:center; justify-content:center; "
-                "font-size:4rem; color:#94a3b8;'>📦</div>",
+                "font-size:4rem; color:#94a3b8;'>ðŸ“¦</div>",
                 unsafe_allow_html=True,
             )
 
     with col_info:
         st.markdown(f"## {product['name']}")
-        st.caption(f"SKU: `{product['sku']}` · Category: {product.get('category', '—')}")
+        st.caption(f"SKU: `{product['sku']}` Â· Category: {product.get('category', 'â€”')}")
         st.markdown(f"### {format_currency(product['price'])} / {format_unit(product.get('unit'))}")
         st.markdown(f"**Stock available:** {product['stock']} {format_unit(product.get('unit'))}")
 
         # Quality / Brand / Model row
         col_q, col_b, col_m = st.columns(3)
         with col_q:
-            st.metric("Quality Grade", product.get("quality_grade") or "—")
+            st.metric("Quality Grade", product.get("quality_grade") or "â€”")
         with col_b:
-            st.metric("Brand", product.get("brand") or "—")
+            st.metric("Brand", product.get("brand") or "â€”")
         with col_m:
-            st.metric("Model", product.get("model") or "—")
+            st.metric("Model", product.get("model") or "â€”")
 
         col_o, col_c = st.columns(2)
         with col_o:
-            st.metric("Origin", product.get("origin") or "—")
+            st.metric("Origin", product.get("origin") or "â€”")
         with col_c:
             certs = product.get("certifications") or []
-            st.metric("Certifications", ", ".join(certs) if certs else "—")
+            st.metric("Certifications", ", ".join(certs) if certs else "â€”")
 
         if product.get("description"):
             st.markdown(f"_{product['description']}_")
@@ -99,7 +118,7 @@ def render_product_detail(product_id: str):
     st.markdown("---")
 
     # ---- Producer Business Card ----
-    st.markdown("### 👤 Producer Profile")
+    st.markdown("### ðŸ‘¤ Producer Profile")
     _render_producer_business_card(producer)
 
     # ---- Order Form + Agreement Preview (side by side) ----
@@ -107,11 +126,11 @@ def render_product_detail(product_id: str):
     col_order, col_agreement = st.columns([3, 2])
 
     with col_order:
-        st.markdown("### 🛒 Place an Order")
+        st.markdown("### ðŸ›’ Place an Order")
         _render_order_form(product, producer, user, role)
 
     with col_agreement:
-        st.markdown("### 📜 Producer Agreement Preview")
+        st.markdown("### ðŸ“œ Producer Agreement Preview")
         _render_agreement_preview(product, producer, user)
         st.markdown("---")
         _render_save_button(product, user)
@@ -167,18 +186,18 @@ def _render_producer_business_card(producer: dict):
     # Contact + business details grid
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**📧 Contact Information**")
-        st.markdown(f"• Email: `{producer.get('email', '—')}`")
-        st.markdown(f"• Phone: {producer.get('phone', '—') or '—'}")
-        st.markdown(f"• Location: {producer.get('location', '—') or '—'}")
-        st.markdown(f"• Verified: {'✅ Yes' if producer.get('is_verified') else '❌ No'}")
+        st.markdown("**ðŸ“§ Contact Information**")
+        st.markdown(f"â€¢ Email: `{producer.get('email', 'â€”')}`")
+        st.markdown(f"â€¢ Phone: {producer.get('phone', 'â€”') or 'â€”'}")
+        st.markdown(f"â€¢ Location: {producer.get('location', 'â€”') or 'â€”'}")
+        st.markdown(f"â€¢ Verified: {'âœ… Yes' if producer.get('is_verified') else 'âŒ No'}")
 
     with col2:
-        st.markdown("**📊 Business Information**")
-        st.markdown(f"• Member since: {format_datetime(producer.get('created_at'), '%Y-%m-%d')}")
-        st.markdown(f"• Status: {'✅ Active' if producer.get('is_active') else '❌ Inactive'}")
+        st.markdown("**ðŸ“Š Business Information**")
+        st.markdown(f"â€¢ Member since: {format_datetime(producer.get('created_at'), '%Y-%m-%d')}")
+        st.markdown(f"â€¢ Status: {'âœ… Active' if producer.get('is_active') else 'âŒ Inactive'}")
         last_login = producer.get("last_login")
-        st.markdown(f"• Last login: {format_datetime(last_login) if last_login else '—'}")
+        st.markdown(f"â€¢ Last login: {format_datetime(last_login) if last_login else 'â€”'}")
 
 
 def _render_agreement_preview(product: dict, producer: dict, user: dict):
@@ -187,11 +206,11 @@ def _render_agreement_preview(product: dict, producer: dict, user: dict):
         f"""
         <div style='padding:1rem; border-radius:8px; background:#fffbeb;
                     border:1px dashed #f59e0b; font-size:0.9rem;'>
-        <strong>📋 Supply Agreement Terms</strong><br/>
+        <strong>ðŸ“‹ Supply Agreement Terms</strong><br/>
         <hr style='border-color:#fde68a; margin:0.5rem 0;'/>
-        <strong>Producer:</strong> {producer.get('full_name', '—')}<br/>
-        <strong>Buyer:</strong> {user.get('full_name', '—')}<br/>
-        <strong>Product:</strong> {product.get('name', '—')} ({product.get('sku', '—')})<br/>
+        <strong>Producer:</strong> {producer.get('full_name', 'â€”')}<br/>
+        <strong>Buyer:</strong> {user.get('full_name', 'â€”')}<br/>
+        <strong>Product:</strong> {product.get('name', 'â€”')} ({product.get('sku', 'â€”')})<br/>
         <strong>Unit Price:</strong> {format_currency(product.get('price'))} / {format_unit(product.get('unit'))}<br/>
         <strong>Available Stock:</strong> {product.get('stock', 0)} {format_unit(product.get('unit'))}<br/>
         <strong>Quality Grade:</strong> {product.get('quality_grade') or 'Standard'}<br/>
@@ -222,13 +241,13 @@ def _render_save_button(product: dict, user: dict):
         save_count = len(all_saves)
 
         if is_saved:
-            if st.button(f"♥ Saved (by {save_count} users)", use_container_width=True, type="primary"):
+            if st.button(f"â™¥ Saved (by {save_count} users)", use_container_width=True, type="primary"):
                 client.table("favorites").delete().eq("user_id", user["id"]).eq(
                     "product_id", product["id"]
                 ).execute()
                 st.rerun()
         else:
-            if st.button(f"♡ Save (saved by {save_count} users)", use_container_width=True):
+            if st.button(f"â™¡ Save (saved by {save_count} users)", use_container_width=True):
                 client.table("favorites").insert({
                     "user_id": user["id"],
                     "product_id": product["id"],
@@ -328,7 +347,7 @@ def _render_order_form(product: dict, producer: dict, user: dict, role: str):
         )
 
         submitted = st.form_submit_button(
-            "✅ Confirm Agreement & Place Order",
+            "âœ… Confirm Agreement & Place Order",
             type="primary",
             use_container_width=True,
         )
@@ -353,7 +372,7 @@ def _render_order_form(product: dict, producer: dict, user: dict, role: str):
     confirmation = st.session_state.get("last_order_confirmation")
     if confirmation:
         st.markdown("---")
-        st.markdown("### ✅ Order Placed Successfully!")
+        st.markdown("### âœ… Order Placed Successfully!")
         st.markdown(f"""
         **Order Confirmation:**
         - Order #: `{confirmation['order_number']}`
@@ -365,13 +384,13 @@ def _render_order_form(product: dict, producer: dict, user: dict, role: str):
         """)
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            if st.button("← Back to Marketplace", key="back_after_order", use_container_width=True):
+            if st.button("â† Back to Marketplace", key="back_after_order", use_container_width=True):
                 st.session_state.pop("view_product_id", None)
                 st.session_state.pop("last_order_confirmation", None)
                 st.session_state["force_nav"] = "marketplace"
                 st.rerun()
         with col_b2:
-            if st.button("📦 View My Orders", key="view_orders_after", use_container_width=True):
+            if st.button("ðŸ“¦ View My Orders", key="view_orders_after", use_container_width=True):
                 st.session_state.pop("view_product_id", None)
                 st.session_state.pop("last_order_confirmation", None)
                 st.session_state["force_nav"] = "orders"
@@ -386,20 +405,40 @@ def _place_order(
     """Insert the order + order_items + send notification to producer."""
     try:
         client = get_supabase_client()
+
+        # ---- DEFENSIVE FIELD ACCESS ----
+        # producer may be {} if the FK join failed and the fallback fetch also
+        # failed (e.g. RLS blocks reading other users' profiles). Use .get()
+        # everywhere and validate the producer_id before proceeding.
+        producer_id = producer.get("id") or product.get("producer_id")
+        producer_name = producer.get("full_name") or "Unknown Producer"
+
+        if not producer_id:
+            st.error(
+                "âŒ Cannot place order: producer information is missing for this product. "
+                "This usually means the producer's profile was deleted or there is a "
+                "database foreign-key issue. Please contact support."
+            )
+            return
+
+        if not user.get("id"):
+            st.error("âŒ Cannot place order: your user session is invalid. Please log out and back in.")
+            return
+
         order_number = generate_order_number(role.upper()[:4])
 
         # Create the agreement (status pending)
         agreement_code = f"AGR-{order_number[-12:]}"
         try:
             client.table("agreements").insert({
-                "producer_id": producer["id"],
+                "producer_id": producer_id,
                 "merchant_id": user["id"],
                 "agreement_code": agreement_code,
-                "title": f"Supply Agreement — {product['name']}",
+                "title": f"Supply Agreement â€” {product.get('name', 'Product')}",
                 "terms": (
-                    f"Buyer {user['full_name']} agrees to purchase {quantity} "
-                    f"{format_unit(product.get('unit'))} of {product['name']} "
-                    f"at {format_currency(product['price'])} per unit. "
+                    f"Buyer {user.get('full_name', 'Buyer')} agrees to purchase {quantity} "
+                    f"{format_unit(product.get('unit'))} of {product.get('name', 'product')} "
+                    f"at {format_currency(product.get('price', 0))} per unit. "
                     f"Payment: {payment_terms}. Shipping to {ship_city}, {ship_country}."
                 ),
                 "status": "pending",
@@ -412,7 +451,7 @@ def _place_order(
             "order_number": order_number,
             "buyer_id": user["id"],
             "buyer_role": role,
-            "seller_id": producer["id"],
+            "seller_id": producer_id,
             "seller_role": "producer",
             "subtotal": subtotal,
             "tax": tax,
@@ -446,21 +485,22 @@ def _place_order(
                 .execute()
             )
             if not fetched or not fetched.data:
-                # Even if we can't get the id, the order was created —
+                # Even if we can't get the id, the order was created â€”
                 # don't fail the whole flow, just skip the order_items insert
                 new_order = None
             else:
                 new_order = fetched.data
 
         # Insert order item (only if we have the order id)
-        if new_order and new_order.get("id"):
+        new_order_id = (new_order or {}).get("id")
+        if new_order_id:
             try:
                 client.table("order_items").insert({
-                    "order_id": new_order["id"],
-                    "product_id": product["id"],
-                    "sku": product["sku"],
-                    "name": product["name"],
-                    "unit_price": float(product["price"]),
+                    "order_id": new_order_id,
+                    "product_id": product.get("id"),
+                    "sku": product.get("sku"),
+                    "name": product.get("name"),
+                    "unit_price": float(product.get("price", 0)),
                     "quantity": quantity,
                 }).execute()
             except Exception:
@@ -469,12 +509,12 @@ def _place_order(
         # Notify the producer
         try:
             client.table("notifications").insert({
-                "user_id": producer["id"],
+                "user_id": producer_id,
                 "sender_id": user["id"],
-                "title": "New Order Received 🎉",
+                "title": "New Order Received ðŸŽ‰",
                 "message": (
-                    f"You received order {order_number} from {user['full_name']} "
-                    f"for {quantity} {format_unit(product.get('unit'))} of {product['name']}. "
+                    f"You received order {order_number} from {user.get('full_name', 'a buyer')} "
+                    f"for {quantity} {format_unit(product.get('unit'))} of {product.get('name', 'product')}. "
                     f"Total: {format_currency(total)}."
                 ),
                 "type": "success",
@@ -483,7 +523,7 @@ def _place_order(
         except Exception:
             pass
 
-        st.success(f"✅ Order {order_number} placed successfully!")
+        st.success(f"âœ… Order {order_number} placed successfully!")
         st.balloons()
         # Store confirmation details in session_state so we can render them
         # OUTSIDE the form (st.button can't be used inside st.form)
