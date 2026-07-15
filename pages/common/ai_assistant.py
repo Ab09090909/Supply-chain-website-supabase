@@ -1,5 +1,5 @@
 """
-AI Assistant chat page â€” powered by Groq API.
+AI Assistant chat page — powered by Groq API.
 
 Pure native Streamlit: st.chat_message + st.chat_input. No HTML, no
 unsafe_allow_html, no custom CSS bubble divs. The bubbles render with
@@ -16,7 +16,7 @@ from ai.assistant import chat_with_assistant, is_assistant_available
 
 
 def render_ai_assistant():
-    page_header("ðŸ’¬ AI Assistant", "Ask me anything about the AI Supply Chain Platform")
+    page_header("💬 AI Assistant", "Ask me anything about the AI Supply Chain Platform")
 
     user = get_current_user()
     if not user:
@@ -24,7 +24,7 @@ def render_ai_assistant():
 
     # --- Availability check ---
     if not is_assistant_available():
-        st.warning("âš ï¸ AI Assistant is not configured yet.")
+        st.warning("⚠️ AI Assistant is not configured yet.")
         st.info(
             "**To enable the AI Assistant:**\n\n"
             "1. Get a FREE API key from [Groq Console](https://console.groq.com/keys)\n"
@@ -32,20 +32,20 @@ def render_ai_assistant():
             "```\n"
             "GROQ_API_KEY = \"gsk_your_key_here\"\n"
             "```\n\n"
-            "The Groq API is free and fast â€” perfect for this assistant."
+            "The Groq API is free and fast — perfect for this assistant."
         )
         return
 
     # --- Intro ---
     st.info(
-        "ðŸ‘‹ Hi! I'm your AI Supply Chain Platform assistant. I can help you with:\n"
-        "- ðŸ›’ How to use the marketplace\n"
-        "- ðŸ“¦ How to add products and manage inventory\n"
-        "- ðŸ¤– How AI predictions and recommendations work (and how accurate they are)\n"
-        "- ðŸ¤ How merchant matching works\n"
-        "- ðŸ”” Notifications and messaging\n"
-        "- âš™ï¸ Setting up your preferences\n"
-        "- ðŸ’° Orders, agreements, and payments\n\n"
+        "👋 Hi! I'm your AI Supply Chain Platform assistant. I can help you with:\n"
+        "- 🛒 How to use the marketplace\n"
+        "- 📦 How to add products and manage inventory\n"
+        "- 🤖 How AI predictions and recommendations work (and how accurate they are)\n"
+        "- 🤝 How merchant matching works\n"
+        "- 🔔 Notifications and messaging\n"
+        "- ⚙️ Setting up your preferences\n"
+        "- 💰 Orders, agreements, and payments\n\n"
         "**I only answer questions about this platform.** Ask me anything!"
     )
 
@@ -55,12 +55,12 @@ def render_ai_assistant():
 
     # --- Display chat history using native st.chat_message ---
     for msg in st.session_state["assistant_chat"]:
-        with st.chat_message(msg["role"], avatar="ðŸ¤–" if msg["role"] == "assistant" else None):
+        with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else None):
             st.markdown(msg["content"])
 
     # --- Quick suggestion buttons (only before first message) ---
     if not st.session_state["assistant_chat"]:
-        st.markdown("##### ðŸ’¡ Try asking:")
+        st.markdown("##### 💡 Try asking:")
         suggestions = [
             "How do I place an order?",
             "What does the AI Merchant Match feature do?",
@@ -86,7 +86,7 @@ def render_ai_assistant():
 
     # --- Clear chat button ---
     if st.session_state["assistant_chat"]:
-        if st.button("ðŸ—‘ï¸ Clear chat history"):
+        if st.button("🗑️ Clear chat history"):
             st.session_state["assistant_chat"] = []
             st.rerun()
 
@@ -94,6 +94,6 @@ def render_ai_assistant():
 def _process_and_respond():
     """Send the last user message to Groq and store the response."""
     last_msg = st.session_state["assistant_chat"][-1]["content"]
-    with st.spinner("ðŸ¤– Thinking..."):
+    with st.spinner("🤖 Thinking..."):
         response = chat_with_assistant(last_msg, st.session_state["assistant_chat"])
     st.session_state["assistant_chat"].append({"role": "assistant", "content": response})
