@@ -6,17 +6,17 @@ Supabase REST API. This eliminates all dependency issues on Streamlit Cloud
 (pydantic_core, cryptography, etc.).
 
 Provides:
-  • auth.sign_up(email, password, metadata) → creates auth user
-  • auth.sign_in_with_password(email, password) → returns session
-  • auth.sign_out() → invalidates session
-  • auth.reset_password_email(email) → sends reset email
-  • auth.update_user(token, updates) → updates user
-  • table(name).select(filters).eq(column, value).execute() → query
-  • table(name).insert(data).execute() → create
-  • table(name).update(data).eq(column, value).execute() → update
-  • table(name).delete().eq(column, value).execute() → delete
-  • storage.from_(bucket).upload(path, file, options) → upload file
-  • storage.from_(bucket).get_public_url(path) → get URL
+  â€¢ auth.sign_up(email, password, metadata) â†’ creates auth user
+  â€¢ auth.sign_in_with_password(email, password) â†’ returns session
+  â€¢ auth.sign_out() â†’ invalidates session
+  â€¢ auth.reset_password_email(email) â†’ sends reset email
+  â€¢ auth.update_user(token, updates) â†’ updates user
+  â€¢ table(name).select(filters).eq(column, value).execute() â†’ query
+  â€¢ table(name).insert(data).execute() â†’ create
+  â€¢ table(name).update(data).eq(column, value).execute() â†’ update
+  â€¢ table(name).delete().eq(column, value).execute() â†’ delete
+  â€¢ storage.from_(bucket).upload(path, file, options) â†’ upload file
+  â€¢ storage.from_(bucket).get_public_url(path) â†’ get URL
 """
 from __future__ import annotations
 
@@ -168,7 +168,6 @@ class _QueryBuilder:
         self._limit_val: Optional[int] = None
         self._order_col: Optional[str] = None
         self._order_desc: bool = False
-        self._single: bool = False
 
     def select(self, cols: str = "*"):
         self._select_cols = cols
@@ -199,10 +198,6 @@ class _QueryBuilder:
         return self
 
     def in_(self, column: str, values: list):
-        if not values:
-            # Empty list — add an impossible filter so the query returns nothing
-            self._filters.append(f"{column}=eq.__EMPTY_LIST__")
-            return self
         vals = ",".join(_format_value(v) for v in values)
         self._filters.append(f"{column}=in.({vals})")
         return self
@@ -229,18 +224,27 @@ class _QueryBuilder:
         return self
 
     def execute(self):
-        # Build URL
-        url = f"{self._client.url}/rest/v1/{self._table}?select={self._select_cols}"
+        # Build URL â€” use params dict so requests URL-encodes everything
+        # (select values like "*, profiles!fk(*)" contain spaces + parens
+        #  that MUST be percent-encoded or PostgREST silently drops the join)
+        url = f"{self._client.url}/rest/v1/{self._table}"
+        params = {"select": self._select_cols}
         for f in self._filters:
-            url += f"&{f}"
+            # f is already in the form "col=op.val"
+            if "=" in f:
+                col, val = f.split("=", 1)
+                params[col] = val
+            else:
+                # Fallback: append as raw query string
+                url += (f"&{f}" if "?" in url else f"?{f}")
         if self._order_col:
             direction = "desc" if self._order_desc else "asc"
-            url += f"&order={self._order_col}.{direction}"
+            params["order"] = f"{self._order_col}.{direction}"
         if self._limit_val:
-            url += f"&limit={self._limit_val}"
+            params["limit"] = self._limit_val
 
         headers = self._client._headers()
-        r = requests.get(url, headers=headers, timeout=30)
+        r = requests.get(url, headers=headers, params=params, timeout=30)
         if r.status_code >= 400:
             raise Exception(r.text)
         data = r.json()
@@ -355,13 +359,19 @@ class _StorageBucket:
         url = f"{self._client.url}/storage/v1/object/{self._bucket}/{path}"
         headers = self._client._headers()
         headers.pop("Content-Type", None)  # multipart will set it
-        # Handle upsert as query parameter (Supabase Storage API requirement)
         if file_options:
-            upsert = file_options.get("upsert", False)
-            if upsert:
-                url += "?upsert=true"
-            content_type = file_options.get("content_type", "application/octet-stream")
+            # Accept both "content_type" (underscore, supabase-py style)
+            # and "content-type" (hyphen, raw HTTP header style)
+            content_type = (
+                file_options.get("content_type")
+                or file_options.get("content-type")
+                or "application/octet-stream"
+            )
             headers["Content-Type"] = content_type
+            # Handle upsert â€” accept bool True or string "true"
+            upsert = file_options.get("upsert", file_options.get("x-upsert"))
+            if upsert is True or str(upsert).lower() == "true":
+                headers["x-upsert"] = "true"  # MUST be string, not bool
         r = requests.post(url, headers=headers, data=file, timeout=60)
         if r.status_code >= 400:
             raise Exception(r.text)
@@ -380,14 +390,26 @@ class _Storage:
 
 
 def _format_value(v: Any) -> str:
+    """Format a Python value for use in a PostgREST filter.
+
+    PostgREST expects: col=eq.VALUE  (no surrounding quotes for plain strings).
+    Special chars like commas, parens, backslashes must be backslash-escaped.
+    See: https://postgrest.org/en/stable/api.html#horizontal-filtering-rows
+    """
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, str):
-        # PostgREST requires string values to be enclosed in double quotes
-        # if they contain special characters (commas, parentheses, spaces, etc.)
-        # For safety, always quote string values for PostgREST filters.
-        escaped = v.replace('"', '\\"')
-        return f'"{escaped}"'
+        # Escape special chars per PostgREST spec (do NOT strip quotes â€” that
+        # would corrupt values that legitimately contain them)
+        # Special chars to escape: " \ , . ( ) <space>
+        special = '"\\,(). '
+        result = []
+        for ch in v:
+            if ch in special:
+                result.append("\\" + ch)
+            else:
+                result.append(ch)
+        return "".join(result)
     return str(v)
 
 
