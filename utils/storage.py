@@ -147,6 +147,7 @@ def upload_image(
 
     # --- Upload with retry ---
     last_error = None
+    last_status = None
     for attempt in range(2):
         try:
             client = get_supabase_client()
@@ -182,8 +183,18 @@ def upload_image(
 
         except Exception as e:
             last_error = str(e)
+            # Track the HTTP status for a more specific error message.
+            # The supabase_lite client raises Exception(r.text) on 4xx/5xx
+            # responses, but we also need the status code, which is
+            # currently lost. We can grep the body for the standard
+            # Supabase JSON error keys.
+            err_lower = (last_error or "").lower()
+            for status_code_str in ("400", "401", "403", "404", "409", "413", "415", "500"):
+                if f'"statuscode":"{status_code_str}"' in err_lower:
+                    last_status = status_code_str
+                    break
             # If it's a duplicate path error, try with a new UUID
-            if "already" in last_error.lower() and attempt == 0:
+            if "already" in err_lower and attempt == 0:
                 file_path = f"{folder}/{uuid4().hex}.{ext}"
                 continue
             # Otherwise break immediately
@@ -191,23 +202,67 @@ def upload_image(
 
     # --- Format error message helpfully ---
     err_lower = (last_error or "").lower()
+    # Surface the most common RLS / policy failure with the *actual*
+    # Supabase response so the user can debug it.
+    if "row-level security" in err_lower or "row level security" in err_lower or "violates row-level" in err_lower:
+        return None, (
+            f"Upload blocked by RLS policy on storage.objects. "
+            f"This usually means the storage policies in supabase_sql/migration_v2.sql "
+            f"have not been applied to your Supabase project. "
+            f"Go to Supabase Dashboard → SQL Editor → New query, paste the contents "
+            f"of supabase_sql/migration_v2.sql, and click Run. "
+            f"Supabase response: {last_error[:300]}"
+        )
     if "bucket" in err_lower and "not found" in err_lower:
         return None, (
-            "Storage bucket 'product-images' not found. Run supabase/migration_v2.sql "
-            "in your Supabase SQL Editor to create it."
+            f"Storage bucket '{BUCKET_NAME}' not found. Run supabase_sql/migration_v2.sql "
+            f"in your Supabase SQL Editor to create it. "
+            f"Supabase response: {last_error[:300]}"
         )
-    if "unauthorized" in err_lower or "401" in err_lower:
+    if "unauthorized" in err_lower or "401" in err_lower or "403" in err_lower:
+        # Try to detect JWT-specific errors vs RLS-vs-storage-policy errors.
+        # Supabase Auth / Storage error messages contain:
+        #   "Invalid JWT"     → JWT is malformed
+        #   "JWT expired"     → user needs to log in again
+        #   "apikey not valid" → anon key is wrong (not the user's JWT)
+        # We surface each one with a tailored message.
+        if "jwt expired" in err_lower or "invalid jwt" in err_lower:
+            return None, (
+                f"Upload failed: your session token has expired (HTTP {last_status or '401'}). "
+                f"Please log out and log in again, then retry the upload. "
+                f"Supabase response: {last_error[:200]}"
+            )
+        if "apikey" in err_lower and "not valid" in err_lower:
+            return None, (
+                f"Upload failed: the Supabase anon key in your .env / .streamlit/secrets.toml "
+                f"is invalid (HTTP {last_status or '401'}). "
+                f"Check the SUPABASE_ANON_KEY value in your Streamlit Cloud secrets "
+                f"matches the current anon key in Supabase Dashboard → Settings → API. "
+                f"Supabase response: {last_error[:200]}"
+            )
         return None, (
-            "Upload unauthorized. Make sure the storage policies in migration_v2.sql "
-            "have been applied (Storage > Policies)."
+            f"Upload unauthorized (HTTP {last_status or '?'}). "
+            f"Most common cause: the storage policies in supabase_sql/migration_v2.sql "
+            f"have not been applied. Re-run that file in Supabase Dashboard → SQL Editor. "
+            f"If you JUST rotated Supabase keys, also update your .env / .streamlit/secrets.toml. "
+            f"Supabase response: {last_error[:300]}"
+        )
+    if "mime" in err_lower or "415" in err_lower:
+        return None, (
+            f"File MIME type rejected by bucket policy. "
+            f"This usually means the file's Content-Type header is text/plain "
+            f"instead of the actual image type. The supabase_lite client should "
+            f"set this correctly, but if it persists, try re-saving the image as JPG. "
+            f"Supabase response: {last_error[:300]}"
         )
     if "policy" in err_lower:
         return None, (
-            "Storage RLS policy blocked the upload. Run supabase/migration_v2.sql "
-            "to create the storage policies."
+            f"Storage RLS policy blocked the upload. Run supabase_sql/migration_v2.sql "
+            f"to create the storage policies. "
+            f"Supabase response: {last_error[:300]}"
         )
 
-    return None, f"Upload failed: {last_error}"
+    return None, f"Upload failed (HTTP {last_status or '?'}): {last_error[:300]}"
 
 
 def render_image_uploader(
