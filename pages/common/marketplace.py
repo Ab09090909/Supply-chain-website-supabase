@@ -4,6 +4,7 @@ Shared Marketplace — visible to ALL roles.
 Each product card shows:
   - Product image
   - Name, SKU, category, price (ETB)
+  - Star rating + review count
   - "Saved by N users" indicator
   - "Order" / "View Details" button → opens full product detail page
   - "Save" / "♥ Saved" button (favorites)
@@ -18,6 +19,9 @@ from database.connection import get_supabase_client
 from utils.ui import page_header, role_badge
 from utils.helpers import format_currency, format_unit
 from utils.constants import PRODUCT_CATEGORIES
+from utils.search import filter_products
+from utils.search_ui import render_search_filter_bar
+from utils.reviews_ui import render_product_card_stars
 
 
 def render_shared_marketplace():
@@ -71,42 +75,25 @@ def render_shared_marketplace():
         st.info("No products available yet. Be the first to add one!")
         return
 
-    # Filters with helpful labels
-    col1, col2, col3 = st.columns([3, 2, 1])
-    with col1:
-        search = st.text_input(
-            "🔍 Search products",
-            placeholder="Try 'milk', 'avocado', 'organic'...",
-            help="Search across product name and description. Case-insensitive.",
-        )
-    with col2:
-        categories = ["All"] + PRODUCT_CATEGORIES
-        category = st.selectbox(
-            "Filter by Category",
-            categories,
-            help="Show only products in a specific category, or all.",
-        )
-    with col3:
-        sort_by = st.selectbox(
-            "Sort by",
-            ["Newest", "Price: Low → High", "Price: High → Low", "Stock: High → Low", "Most Saved"],
-            help="Choose how to order products in the grid.",
-        )
+    # Filters (search bar + price range + category + sort + rating + stock)
+    filters = render_search_filter_bar(
+        categories=PRODUCT_CATEGORIES,
+        show_rating_filter=True,
+        show_in_stock=True,
+        key_prefix="mp",
+    )
 
-    filtered = [
-        p for p in products
-        if (not search or search.lower() in p["name"].lower() or search.lower() in p.get("description", "").lower())
-        and (category == "All" or p.get("category") == category)
-    ]
-
-    if sort_by == "Price: Low → High":
-        filtered.sort(key=lambda x: float(x.get("price", 0)))
-    elif sort_by == "Price: High → Low":
-        filtered.sort(key=lambda x: float(x.get("price", 0)), reverse=True)
-    elif sort_by == "Stock: High → Low":
-        filtered.sort(key=lambda x: int(x.get("stock", 0)), reverse=True)
-    elif sort_by == "Most Saved":
-        filtered.sort(key=lambda x: save_counts.get(x["id"], 0), reverse=True)
+    # Apply filters
+    filtered = filter_products(
+        products,
+        query=filters["query"],
+        category=filters["category"],
+        min_price=filters["min_price"],
+        max_price=filters["max_price"],
+        min_rating=filters["min_rating"],
+        in_stock_only=filters["in_stock_only"],
+        sort_by=filters["sort_by"],
+    )
 
     st.markdown(f"###### {len(filtered)} product(s) found")
 
@@ -154,6 +141,9 @@ def render_shared_marketplace():
                 unsafe_allow_html=True,
             )
 
+            # Star rating (only shown if there are reviews)
+            render_product_card_stars(p)
+
             # Action buttons below the card
             col_a, col_b = st.columns(2)
             with col_a:
@@ -182,24 +172,24 @@ def render_shared_marketplace():
                     st.rerun()
 
             if st.button("💬 Contact Producer", key=f"contact_{p['id']}", use_container_width=True):
-                    st.session_state["pending_message_to"] = producer.get("id")
-                    st.session_state["pending_message_to_name"] = producer.get("full_name")
-                    st.session_state["pending_message_subject"] = f"Inquiry: {p['name']}"
+                st.session_state["pending_message_to"] = producer.get("id")
+                st.session_state["pending_message_to_name"] = producer.get("full_name")
+                st.session_state["pending_message_subject"] = f"Inquiry: {p['name']}"
 
-                    # Pre-fill the message body with producer's phone and product info
-                    producer_phone = producer.get("phone") or "Not provided"
-                    producer_email = producer.get("email") or "Not provided"
-                    producer_company = producer.get("company") or "Independent Producer"
-                    pre_filled_body = (
-                        f"Hello {producer.get('full_name', 'there')},\n\n"
-                        f"I'm interested in your product: {p['name']} (SKU: {p['sku']}).\n\n"
-                        f"Producer contact information:\n"
-                        f"- Phone: {producer_phone}\n"
-                        f"- Email: {producer_email}\n"
-                        f"- Company: {producer_company}\n\n"
-                        f"Could you please provide more details about availability and delivery?\n\n"
-                        f"Thank you."
-                    )
-                    st.session_state["pending_message_body"] = pre_filled_body
-                    st.session_state["force_nav"] = "notifications"
-                    st.rerun()
+                # Pre-fill the message body with producer's phone and product info
+                producer_phone = producer.get("phone") or "Not provided"
+                producer_email = producer.get("email") or "Not provided"
+                producer_company = producer.get("company") or "Independent Producer"
+                pre_filled_body = (
+                    f"Hello {producer.get('full_name', 'there')},\n\n"
+                    f"I'm interested in your product: {p['name']} (SKU: {p['sku']}).\n\n"
+                    f"Producer contact information:\n"
+                    f"- Phone: {producer_phone}\n"
+                    f"- Email: {producer_email}\n"
+                    f"- Company: {producer_company}\n\n"
+                    f"Could you please provide more details about availability and delivery?\n\n"
+                    f"Thank you."
+                )
+                st.session_state["pending_message_body"] = pre_filled_body
+                st.session_state["force_nav"] = "notifications"
+                st.rerun()
