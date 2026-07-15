@@ -311,6 +311,14 @@ def _render_order_card(order: dict, producer: dict):
     elif status == "cancelled":
         st.error("This order was cancelled.")
 
+    # Tracking number + carrier (set when shipping, visible to buyer)
+    with st.expander(f"🚚 Update tracking — {order['order_number']}", expanded=False):
+        try:
+            from utils.tracking_ui import render_seller_tracking_form
+            render_seller_tracking_form(order["id"])
+        except Exception as e:
+            st.caption(f"Tracking unavailable: {e}")
+
 
 def _advance_order_status(order: dict, producer: dict):
     current     = order["status"]
