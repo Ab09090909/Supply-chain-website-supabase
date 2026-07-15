@@ -36,10 +36,29 @@ def get_recommendations(user_id: str, top_n: int = 6) -> List[Dict[str, Any]]:
     # ---- Strategy 1: Collaborative filtering ----
     if rec_info.get("trained"):
         sim_df = rec_info["similarity_matrix"]
-        interactions = rec_info["interactions"]
 
-        # Get products this user has interacted with
-        user_products = interactions[interactions["user_id"] == user_id_str]["product_id"].unique()
+        # Rebuild interactions DataFrame from the training data
+        order_items = data["order_items"]
+        orders = data["orders"]
+        favorites = data["favorites"]
+
+        interactions_rows = []
+        if not order_items.empty and not orders.empty:
+            item_user = order_items.merge(orders[["id", "buyer_id"]], left_on="order_id", right_on="id", how="left", suffixes=("", "_order"))
+            for _, r in item_user.iterrows():
+                if r.get("buyer_id"):
+                    interactions_rows.append({"user_id": str(r["buyer_id"]), "product_id": str(r["product_id"]), "score": 3})
+        if not favorites.empty:
+            for _, r in favorites.iterrows():
+                if r.get("user_id") and r.get("product_id"):
+                    interactions_rows.append({"user_id": str(r["user_id"]), "product_id": str(r["product_id"]), "score": 2})
+
+        user_products = []
+        if interactions_rows:
+            interactions = pd.DataFrame(interactions_rows).dropna(subset=["user_id", "product_id"])
+
+            # Get products this user has interacted with
+            user_products = interactions[interactions["user_id"] == user_id_str]["product_id"].unique()
 
         if len(user_products) > 0:
             # Aggregate similarity scores across user's products
