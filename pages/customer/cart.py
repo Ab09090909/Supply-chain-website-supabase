@@ -63,7 +63,7 @@ def render_customer_cart():
     col1, col2 = st.columns([3, 1])
     with col2:
         st.markdown(f"**Subtotal:** {format_currency(subtotal)}")
-        st.markdown(f"**Tax (8%):** {format_currency(tax)}")
+        st.markdown(f"**Tax (15%):** {format_currency(tax)}")
         st.markdown(f"**Shipping:** {format_currency(shipping)}")
         st.markdown(f"### Total: {format_currency(total)}")
 
