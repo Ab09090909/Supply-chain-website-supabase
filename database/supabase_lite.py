@@ -355,7 +355,11 @@ class _StorageBucket:
         url = f"{self._client.url}/storage/v1/object/{self._bucket}/{path}"
         headers = self._client._headers()
         headers.pop("Content-Type", None)  # multipart will set it
+        # Handle upsert as query parameter (Supabase Storage API requirement)
         if file_options:
+            upsert = file_options.get("upsert", False)
+            if upsert:
+                url += "?upsert=true"
             content_type = file_options.get("content_type", "application/octet-stream")
             headers["Content-Type"] = content_type
         r = requests.post(url, headers=headers, data=file, timeout=60)
