@@ -9,6 +9,106 @@ from __future__ import annotations
 
 import streamlit as st
 from uuid import uuid4
+-- ============================================================================
+-- DIAGNOSTIC — current RLS state for verification_documents and orders
+-- ----------------------------------------------------------------------------
+-- Run this in: Supabase Dashboard > SQL Editor > New query
+--
+-- It tells you:
+--   1. Whether RLS is enabled on the table
+--   2. The exact text of every policy
+--   3. What is_admin() looks like (vulnerable to search_path attack?)
+--   4. Whether the storage.objects RLS is enabled
+--   5. Whether the verification-docs bucket is public
+--
+-- READ-ONLY. No changes are made.
+-- ============================================================================
+
+
+-- ---- 1. RLS enabled? ----
+select 'verification_documents rls' as what,
+       c.relrowsecurity as rls_enabled
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'verification_documents';
+
+select 'orders rls' as what,
+       c.relrowsecurity as rls_enabled
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'orders';
+
+
+-- ---- 2. Policies on verification_documents ----
+select '--- verification_documents policies ---' as section;
+select policyname, cmd, qual, with_check
+  from pg_policies
+ where schemaname = 'public' and tablename = 'verification_documents'
+ order by cmd, policyname;
+
+
+-- ---- 3. Policies on orders ----
+select '--- orders policies ---' as section;
+select policyname, cmd, qual, with_check
+  from pg_policies
+ where schemaname = 'public' and tablename = 'orders'
+ order by cmd, policyname;
+
+
+-- ---- 4. is_admin() function source ----
+select '--- is_admin() function source ---' as section;
+select pg_get_functiondef(p.oid) as function_source
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname = 'is_admin';
+
+
+-- ---- 5. storage.objects RLS + bucket public status ----
+select '--- storage + buckets ---' as section;
+select 'storage.objects rls' as what,
+       c.relrowsecurity as value
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'storage' and c.relname = 'objects';
+
+select id as bucket, public, file_size_limit, allowed_mime_types
+  from storage.buckets
+ where id in ('verification-docs', 'product-images')
+ order by id;
+
+
+-- ---- 6. Policies on storage.objects (verification-docs) ----
+select '--- storage.objects policies for verification-docs ---' as section;
+select policyname, cmd, qual, with_check
+  from pg_policies
+ where schemaname = 'storage' and tablename = 'objects'
+   and qual::text like '%verification-docs%'
+ order by cmd, policyname;
+
+
+-- ---- 7. Are the missing columns / tables present? ----
+select '--- missing tables/columns check ---' as section;
+select table_name
+  from information_schema.tables
+ where table_schema = 'public'
+   and table_name in ('order_timeline', 'order_tracking', 'product_reviews')
+ order by table_name;
+
+select column_name
+  from information_schema.columns
+ where table_schema = 'public' and table_name = 'products'
+   and column_name in ('avg_rating', 'review_count', 'view_count', 'sales_count')
+ order by column_name;
+
+select column_name
+  from information_schema.columns
+ where table_schema = 'public' and table_name = 'orders'
+   and column_name in ('tracking_number', 'carrier', 'estimated_delivery', 'shipped_at', 'delivered_at')
+ order by column_name;
+
+
+-- ---- DONE ----
+select 'diagnostic complete — copy all results and share with me' as result;
 
 from auth.session import get_current_user
 
