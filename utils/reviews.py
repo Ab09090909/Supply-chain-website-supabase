@@ -27,6 +27,59 @@ def list_reviews_for_product(product_id: str, limit: int = 20) -> List[Dict[str,
         return []
 
 
+def list_reviews_by_buyer(buyer_id: str) -> List[Dict[str, Any]]:
+    """Fetch all reviews written by a given buyer (used to show 'you already rated' on order pages)."""
+    try:
+        client = get_supabase_client()
+        r = (
+            client.table("product_reviews")
+            .select("id, product_id, order_id, rating, title, body, created_at")
+            .eq("reviewer_id", buyer_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return r.data or []
+    except Exception:
+        return []
+
+
+def get_review_for_order(order_id: str, reviewer_id: str) -> Optional[Dict[str, Any]]:
+    """Return the review (if any) the given reviewer left for the given order.
+
+    Used by the order pages to detect "you've already rated this" so we can
+    show the existing review instead of letting them post a duplicate.
+    """
+    try:
+        client = get_supabase_client()
+        r = (
+            client.table("product_reviews")
+            .select("id, product_id, order_id, rating, title, body, created_at")
+            .eq("order_id", order_id)
+            .eq("reviewer_id", reviewer_id)
+            .maybe_single()
+            .execute()
+        )
+        return r.data if r else None
+    except Exception:
+        return None
+
+
+def list_products_with_ratings(producer_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return every product with its aggregate rating fields, optionally
+    filtered to one producer. Used by producer inventory and admin views
+    so the rating column is always available even when zero reviews exist.
+    """
+    try:
+        client = get_supabase_client()
+        q = client.table("products").select("id, name, sku, avg_rating, review_count")
+        if producer_id:
+            q = q.eq("producer_id", producer_id)
+        r = q.execute()
+        return r.data or []
+    except Exception:
+        return []
+
+
 def has_user_purchased(user_id: str, product_id: str) -> bool:
     """Return True if the user has ever bought this product in a completed/pending order.
 
