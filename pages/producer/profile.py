@@ -16,6 +16,19 @@ def render_producer_profile():
     if not user:
         return
 
+    # ---- Account verification section (shown for unverified users) ----
+    vstatus = user.get("verification_status")
+    if vstatus != "verified":
+        st.markdown("---")
+        st.markdown("### 🔐 Account Verification")
+        st.caption("Verify your identity to unlock ordering, AI features, and merchant matching.")
+        try:
+            from auth.verification import render_verification_page
+            render_verification_page()
+        except Exception as e:
+            st.error(f"Verification module failed to load: {e}")
+        st.markdown("---")
+
     # ---- Avatar image upload (NEW) ----
     st.markdown("##### Profile Photo")
     avatar_url, avatar_err = render_image_uploader(
