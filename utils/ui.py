@@ -12,8 +12,34 @@ from __future__ import annotations
 
 from datetime import datetime
 import streamlit as st
+import textwrap
 
 from .constants import ROLE_COLORS, ROLE_LABELS
+
+
+def _html(html: str) -> None:
+    """Render a raw HTML string safely.
+
+    Always use this instead of ``st.markdown(..., unsafe_allow_html=True)``
+    for multi-line HTML. Why? ``st.markdown`` passes the content through a
+    Markdown parser first, and an indented multi-line HTML string is
+    sometimes mis-interpreted as a code block — which makes the raw
+    ``<div>...</div>`` source appear as text on the page (the bug the
+    user pasted in the screenshot).
+
+    This helper:
+      1. Strips leading whitespace from every line so there's no indented
+         block that could be parsed as a Markdown code block.
+      2. Uses ``st.html()`` (Streamlit 1.39+) which doesn't run the
+         string through the Markdown parser at all.
+
+    The result: HTML is always rendered as HTML, never as text.
+    """
+    cleaned = "\n".join(line.lstrip() for line in html.splitlines())
+    try:
+        st.html(cleaned)
+    except AttributeError:
+        st.markdown(cleaned, unsafe_allow_html=True)
 
 
 # ============================================================
@@ -69,55 +95,52 @@ ICON_GRADIENTS = {
 def page_header(title: str, subtitle: str = "", icon: str = "") -> None:
     """Render an attractive, animated page header with title + subtitle.
 
-    A subtle gradient strip + animated accent dot make the header feel
-    alive without distracting from the content. Pass an optional emoji
-    to display it inside a gradient badge.
+    Uses ``st.html()`` (Streamlit 1.39+) instead of
+    ``st.markdown(..., unsafe_allow_html=True)`` because the markdown
+    parser sometimes mis-interprets multi-line HTML f-strings as code
+    blocks, which renders the raw HTML as visible text on the page.
+    ``st.html()`` bypasses the markdown parser entirely so the styling
+    is always applied.
     """
     icon_html = ""
     if icon:
         icon_html = (
-            f"<div style='display:inline-flex; align-items:center; justify-content:center;"
-            f"width:42px; height:42px; border-radius:12px;"
-            f"background:linear-gradient(135deg, #10b981 0%, #34d399 50%, #6ee7b7 100%);"
-            f"background-size:200% 200%;"
-            f"animation: gradientShift 6s ease infinite, bounceIn 0.5s ease-out;"
-            f"font-size:1.4rem; box-shadow:0 4px 14px rgba(16,185,129,0.3);"
-            f"margin-right:12px; vertical-align:middle;'>{icon}</div>"
+            f"<div style='display:inline-flex;align-items:center;justify-content:center;"
+            f"width:42px;height:42px;border-radius:12px;"
+            f"background:linear-gradient(135deg,#10b981 0%,#34d399 50%,#6ee7b7 100%);"
+            f"background-size:200% 200%;animation:gradientShift 6s ease infinite,bounceIn 0.5s ease-out;"
+            f"font-size:1.4rem;box-shadow:0 4px 14px rgba(16,185,129,0.3);"
+            f"margin-right:12px;vertical-align:middle;'>{icon}</div>"
         )
 
-    st.markdown(
-        f"""
-        <div style='
-            margin: 0 0 1.5rem 0;
-            padding: 1rem 1.25rem;
-            background: linear-gradient(135deg, rgba(16,185,129,0.04) 0%, rgba(52,211,153,0.02) 100%);
-            border-radius: 14px;
-            border: 1px solid rgba(16,185,129,0.12);
-            border-left: 4px solid;
-            border-image: linear-gradient(180deg, #10b981 0%, #34d399 100%) 1;
-            position: relative;
-            overflow: hidden;
-            animation: fadeInDown 0.4s ease-out;
-        '>
-            <div style='display:flex; align-items:center;'>
-                {icon_html}
-                <div style='flex:1; min-width:0;'>
-                    <h1 style='
-                        font-size: 1.5rem;
-                        font-weight: 800;
-                        background: linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%);
-                        -webkit-background-clip: text;
-                        -webkit-text-fill-color: transparent;
-                        background-clip: text;
-                        margin: 0; line-height: 1.2; letter-spacing: -0.02em;
-                    '>{title}</h1>
-                    {f"<p style='color: #64748b; font-size: 0.85rem; margin: 0.25rem 0 0 0; font-weight:500;'>{subtitle}</p>" if subtitle else ""}
-                </div>
-                <div class='pulse-dot' style='flex-shrink:0;'></div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    subtitle_html = (
+        f"<p style='color:#64748b;font-size:0.85rem;margin:0.25rem 0 0 0;font-weight:500;'>{subtitle}</p>"
+        if subtitle else ""
+    )
+
+    # Single-line HTML — no internal newlines, no leading whitespace, no
+    # markdown-confusing indentation.  ``st.html()`` (Streamlit 1.39+)
+    # renders the string as raw HTML so this always works.
+    _html(
+        "<div style='margin:0 0 1.5rem 0;padding:1rem 1.25rem;"
+        "background:linear-gradient(135deg,rgba(16,185,129,0.04) 0%,rgba(52,211,153,0.02) 100%);"
+        "border-radius:14px;border:1px solid rgba(16,185,129,0.12);"
+        "border-left:4px solid #10b981;"
+        "position:relative;overflow:hidden;animation:fadeInDown 0.4s ease-out;'>"
+        "<div style='display:flex;align-items:center;'>"
+        + icon_html +
+        "<div style='flex:1;min-width:0;'>"
+        "<h1 style='font-size:1.5rem;font-weight:800;"
+        "background:linear-gradient(135deg,#047857 0%,#10b981 60%,#34d399 100%);"
+        "-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;"
+        "margin:0;line-height:1.2;letter-spacing:-0.02em;'>"
+        + str(title) +
+        "</h1>"
+        + subtitle_html +
+        "</div>"
+        "<div class='pulse-dot' style='flex-shrink:0;'></div>"
+        "</div>"
+        "</div>"
     )
 
 
@@ -202,7 +225,7 @@ def sidebar_user_card(user: dict) -> None:
             f"{name[0].upper() if name else 'U'}</div>"
         )
 
-    st.markdown(
+    _html(
         f"""
         <div style='padding:0.875rem; border-radius:12px; background:{COLORS["slate_50"]};
                     margin-bottom:0.75rem; border:1px solid {COLORS["slate_200"]};'>
@@ -221,8 +244,7 @@ def sidebar_user_card(user: dict) -> None:
             </div>
             <div style='margin-top:0.5rem;'>{role_badge(role)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -233,7 +255,7 @@ def compact_info_card(icon: str, title: str, value: str, description: str = "", 
     """Render a full-width info card with gradient icon + title + value."""
     gradient_name = ICON_GRADIENTS.get(icon, "emerald")
     gradient = GRADIENTS.get(gradient_name, GRADIENTS["emerald"])
-    st.markdown(
+    _html(
         f"""
         <div style='padding:0.875rem 1rem; border-radius:12px; background:{COLORS["white"]};
                     border:1px solid {COLORS["slate_200"]};
@@ -252,8 +274,7 @@ def compact_info_card(icon: str, title: str, value: str, description: str = "", 
                 {f"<div style='font-size:0.7rem; color:{COLORS['slate_400']}; margin-top:0.1rem;'>{description}</div>" if description else ""}
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -313,7 +334,7 @@ def section_header(label: str, icon: str = "", color: str = "emerald") -> None:
         f"font-size:0.8rem; margin-right:6px; box-shadow:0 2px 6px rgba(0,0,0,0.1);'>{icon}</span>"
         if icon else ""
     )
-    st.markdown(
+    _html(
         f"""
         <div style='
             display:flex; align-items:center; gap:4px;
@@ -331,8 +352,7 @@ def section_header(label: str, icon: str = "", color: str = "emerald") -> None:
                 color: #047857;
             '>{icon_html}{label}</span>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -403,7 +423,7 @@ def kpi_dashboard(cards: list[dict]) -> None:
             """
         )
 
-    st.markdown(
+    _html(
         f"""
         <div style='
             display:grid;
@@ -413,8 +433,7 @@ def kpi_dashboard(cards: list[dict]) -> None:
         '>
             {"".join(html_cards)}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -428,7 +447,7 @@ def animated_progress(label: str, value: float, max_value: float = 100.0, color:
     """
     pct = max(0.0, min(100.0, (value / max(1, max_value)) * 100.0))
     gradient = GRADIENTS.get(color, GRADIENTS["emerald"])
-    st.markdown(
+    _html(
         f"""
         <div style='margin: 0.5rem 0;'>
             <div style='display:flex; justify-content:space-between; font-size:0.78rem; font-weight:600; color:#475569; margin-bottom:4px;'>
@@ -447,6 +466,5 @@ def animated_progress(label: str, value: float, max_value: float = 100.0, color:
                 '></div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
