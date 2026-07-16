@@ -381,66 +381,45 @@ def _render_producer_details(req: dict, producer: dict):
                 sum(float(p.get("avg_rating", 0) or 0) for p in products if p.get("avg_rating"))
                 / max(sum(1 for p in products if p.get("avg_rating")), 1)
             )
+            rating_label = "⭐ Avg rating" if avg_rating else "⭐ No ratings yet"
+            rating_value = f"{avg_rating:.2f}" if avg_rating else "—"
 
             st.markdown("---")
             st.markdown("#### 📊 Portfolio Summary")
 
             # Build the same beautiful KPI card style used at the top of the page
-            # (green icon + label + big number, white card with subtle border)
-            kpi_cards = (
-                f"""
-                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
-                            padding:14px 16px; text-align:center;
-                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
-                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
-                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
-                        🛒 Active products
-                    </div>
-                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
-                        {len(products)}
-                    </div>
-                </div>
-                """
-                f"""
-                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
-                            padding:14px 16px; text-align:center;
-                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
-                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
-                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
-                        📦 Total stock
-                    </div>
-                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
-                        {total_stock:,}
-                    </div>
-                </div>
-                """
-                f"""
-                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
-                            padding:14px 16px; text-align:center;
-                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
-                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
-                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
-                        💰 Inventory value
-                    </div>
-                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
-                        {format_currency(total_value)}
-                    </div>
-                </div>
-                """
-                f"""
-                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
-                            padding:14px 16px; text-align:center;
-                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
-                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
-                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
-                        {'⭐ Avg rating' if avg_rating else '⭐ No ratings yet'}
-                    </div>
-                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
-                        {f"{avg_rating:.2f}" if avg_rating else "—"}
-                    </div>
-                </div>
-                """
+            # (green icon + label + big number, white card with subtle border).
+            # Use double-quoted attributes to avoid any escaping issues with
+            # nested f-strings, and concatenate pre-rendered HTML strings
+            # (no nested f-string braces).
+            card_style = (
+                "background:#fff; border:1px solid #e2e8f0; border-radius:12px; "
+                "padding:14px 16px; text-align:center; "
+                "box-shadow:0 1px 3px rgba(0,0,0,0.04);"
             )
+            label_style = (
+                "font-size:0.7rem; font-weight:700; letter-spacing:0.09em; "
+                "text-transform:uppercase; color:#6b7280; margin-bottom:6px;"
+            )
+            value_style = (
+                "font-size:1.6rem; font-weight:800; color:#047857; line-height:1;"
+            )
+
+            active_products_value = str(len(products))
+            total_stock_value = f"{total_stock:,}"
+            inventory_value_text = format_currency(total_value)
+
+            cards = [
+                f'<div style="{card_style}"><div style="{label_style}">🛒 Active products</div>'
+                f'<div style="{value_style}">{active_products_value}</div></div>',
+                f'<div style="{card_style}"><div style="{label_style}">📦 Total stock</div>'
+                f'<div style="{value_style}">{total_stock_value}</div></div>',
+                f'<div style="{card_style}"><div style="{label_style}">💰 Inventory value</div>'
+                f'<div style="{value_style}">{inventory_value_text}</div></div>',
+                f'<div style="{card_style}"><div style="{label_style}">{rating_label}</div>'
+                f'<div style="{value_style}">{rating_value}</div></div>',
+            ]
+            kpi_cards = "".join(cards)
             st.markdown(
                 f'<div style="display:flex; gap:12px; flex-wrap:wrap;">{kpi_cards}</div>',
                 unsafe_allow_html=True,
