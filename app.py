@@ -78,6 +78,7 @@ REQUIRED_FILES = [
     "pages/customer/cart.py",
     "pages/customer/orders.py",
     "pages/customer/profile.py",
+    "pages/customer/dashboard.py",
     "pages/admin/__init__.py",
     "pages/admin/dashboard.py",
     "pages/admin/fraud.py",
@@ -327,6 +328,10 @@ def render_auth_page():
     if query_page == "signup":
         if render_signup():
             st.query_params.clear()
+            # After signup, the user is automatically signed in. New users
+            # should be sent to their profile page where the verification
+            # prompt lives, so they're asked to verify right away.
+            st.session_state["force_nav"] = "profile"
             st.rerun()
     elif query_page == "forgot-password":
         render_forgot()
@@ -449,6 +454,19 @@ def render_role_content(choice: str | None):
                 verified = is_user_verified_fn()
             except Exception:
                 verified = True  # if check fails, allow access (graceful)
+
+        # For brand-new signups (must_verify flag), show a banner at the
+        # top of every page so the user can't miss the verification step.
+        if not verified and st.session_state.get("must_verify") and choice != "profile":
+            st.info(
+                "🔐 **Welcome! Please verify your account** to unlock ordering, "
+                "messaging, and AI features. "
+                "[Verify now →]()"
+            )
+            if st.button("🔐 Verify My Account", type="primary", key="banner_verify"):
+                st.session_state["force_nav"] = "profile"
+                st.rerun()
+            st.markdown("---")
 
         if not verified and choice not in ("marketplace", "profile"):
             _render_verification_gate()
@@ -624,29 +642,3 @@ def main():
             </style>""",
             unsafe_allow_html=True,
         )
-        render_auth_page()
-        return
-
-    # Logged in → show sidebar + role content
-    # If the last Supabase call returned a 401 with "JWT expired", show
-    # a one-time banner that tells the user to log in again, and clear
-    # the session so they're forced to the login page on next rerun.
-    from auth.session import has_expired_jwt_error, clear_jwt_expired, clear_session
-    if has_expired_jwt_error():
-        st.warning(
-            "🔒 **Your session has expired.** Please log in again to continue. "
-            "Anything you didn't save will be lost."
-        )
-        # Don't clear the session immediately — let the user see the
-        # warning, click the logout button, and explicitly leave.
-        # Just clear the expired flag so the banner doesn't repeat.
-        clear_jwt_expired()
-
-    choice = render_sidebar()
-    if choice and choice != "marketplace":
-        st.session_state.pop("view_product_id", None)
-    render_role_content(choice)
-
-
-if __name__ == "__main__":
-    main()
