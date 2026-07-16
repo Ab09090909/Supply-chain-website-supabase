@@ -1,4 +1,14 @@
-"""Admin dashboard - platform-wide stats, user breakdown, system health."""
+"""Admin dashboard - platform-wide stats, user breakdown, system health.
+
+The admin dashboard now also hosts the AI / ML Engine status panel that
+used to be shown to every user on the AI Insights page. Operational
+diagnostics (training counts, prediction log size, self-learning loop
+state, per-product accuracy across the platform) are admin-only — they
+are not user-facing features.
+
+Non-admins still see their own per-product forecasts in AI Insights, but
+the platform-wide internal metrics are no longer shown there.
+"""
 from __future__ import annotations
 
 import streamlit as st
@@ -7,6 +17,8 @@ from auth.session import get_current_user
 from database.connection import get_supabase_admin_client, get_supabase_client
 from utils.helpers import format_currency, format_datetime
 from utils.db_health import render_db_health_warning
+from pages.common.ai_insights import render_model_status_panel
+from ai.engine import get_training_summary
 
 # ── Shared card CSS (same as producer dashboard) ──────────────────────────────
 CARD_CSS = """
@@ -220,6 +232,37 @@ def render_admin_dashboard():
             + _metric_box(str(unread_notifs),    "Notifications", "🔔", alert=unread_notifs > 0)
         ),
     )
+
+    # ── AI / ML Engine Status (admin-only diagnostics) ───────────────────────
+    # This is the panel that used to live on the public AI Insights page.
+    # It shows training counts, prediction log size, and self-learning
+    # loop state. It is intentionally admin-only because it's operational
+    # info, not a user-facing feature.
+    with st.container(border=True):
+        st.subheader("🧠 AI / ML Engine Status")
+        st.caption(
+            "Operational diagnostics for the self-learning ML engine. "
+            "Use this to verify that predictions are being logged and "
+            "scored against actuals, and to spot training data gaps."
+        )
+        try:
+            ai_summary = get_training_summary()
+            if not ai_summary.get("ml_available", True):
+                st.warning(
+                    "⚠️ ML libraries (pandas, numpy, scikit-learn) are not installed. "
+                    "Add them to `requirements.txt` and reboot the app to enable AI features."
+                )
+            else:
+                # render_model_status_panel handles its own 5+4 metric grid
+                # + the self-learning loop caption + a divider.
+                render_model_status_panel(ai_summary)
+        except Exception as e:
+            st.error(f"Failed to load AI engine status: {e}")
+            st.caption(
+                "Most common cause: the `ai_prediction_log` and `ai_model_metrics` "
+                "tables don't exist yet. Run `supabase_sql/migration_v6.sql` in the "
+                "Supabase SQL Editor to create them."
+            )
 
     # ── Recent Orders ─────────────────────────────────────────────────────────
     with st.container(border=True):
