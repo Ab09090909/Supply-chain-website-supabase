@@ -9,6 +9,8 @@ Merchant can:
 from __future__ import annotations
 
 import streamlit as st
+from uuid import uuid4
+import re as _re
 
 from auth.session import get_current_user
 from database.connection import get_supabase_client
@@ -193,17 +195,29 @@ def _render_request_card(req: dict, merchant: dict):
 
 
 def _confirm_request(req: dict, merchant: dict):
-    """Confirm a merchant request."""
+    """Confirm a merchant request — creates an order, agreement, and tracking record.
+
+    Flow:
+      1. Update the merchant_request status to 'confirmed'
+      2. Update the agreement status to 'active'
+      3. Create a real `orders` row (the producer supplies this merchant)
+         so the same tracking workflow used by buyer → producer works
+      4. Create the matching `order_tracking` row in 'confirmed' state
+      5. Create a `order_timeline` event "Agreement confirmed"
+      6. Notify the producer that the agreement is confirmed and the
+         order is now ready to process
+    """
     try:
         client = get_supabase_client()
-        # Update the request status
+
+        # 1. Update the request status
         client.table("merchant_requests").update({
             "status": "confirmed",
             "merchant_response": "Agreement confirmed by merchant.",
             "responded_at": "now()",
         }).eq("id", req["id"]).execute()
 
-        # Update the agreement status if it exists
+        # 2. Update the agreement status
         if req.get("agreement_code"):
             try:
                 client.table("agreements").update({
@@ -212,7 +226,105 @@ def _confirm_request(req: dict, merchant: dict):
             except Exception:
                 pass
 
-        # Notify the producer
+        # 3. Create a real order so the same tracking workflow works
+        order_id = None
+        try:
+            order_number = f"AGR-{req.get('agreement_code', uuid4().hex[:8].upper())}"
+            # Try to extract the proposed price from the terms
+            price = 0
+            try:
+                # Look for a number followed by "per unit" in the terms
+                m = _re.search(r"Br\s*([\d,]+(?:\.\d+)?)\s*per\s*unit", req.get("proposed_terms", "") or "", _re.IGNORECASE)
+                if m:
+                    price = float(m.group(1).replace(",", ""))
+            except Exception:
+                pass
+            if not price:
+                # Fallback: try the product's listed price
+                try:
+                    product_id = req.get("product_id")
+                    if product_id:
+                        p = client.table("products").select("price").eq("id", product_id).maybe_single().execute()
+                        if p and p.data:
+                            price = float(p.data.get("price") or 0)
+                except Exception:
+                    pass
+
+            order_payload = {
+                "order_number":    order_number,
+                "buyer_id":        req["producer_id"],   # producer supplies the merchant → merchant is the "buyer" in this order
+                "buyer_role":      "merchant",
+                "seller_id":       req["producer_id"],
+                "seller_role":     "producer",
+                "subtotal":        price,
+                "tax":             0,
+                "shipping_cost":   0,
+                "total":           price,
+                "status":          "confirmed",
+                "payment_status":  "pending",
+                "shipping_address": {"name": merchant.get("full_name", "—"),
+                                      "street": "—",
+                                      "city": merchant.get("location", "—"),
+                                      "country": "Ethiopia",
+                                      "phone": merchant.get("phone", "—")},
+                "notes":           f"Order from agreement {req.get('agreement_code', '—')}",
+            }
+            # The producer supplies, the merchant receives. So the producer
+            # is the SELLER and the merchant is the BUYER. We swap them.
+            order_payload["buyer_id"]  = req["merchant_id"]
+            order_payload["seller_id"] = req["producer_id"]
+            order_payload["buyer_role"]  = "merchant"
+            order_payload["seller_role"] = "producer"
+
+            order_resp = client.table("orders").insert(order_payload).execute()
+            if order_resp.data:
+                order_id = order_resp.data[0].get("id")
+                # If the agreement mentions a specific product, create an
+                # order_items row for it so tracking links to the product
+                product_id = req.get("product_id")
+                if product_id:
+                    try:
+                        prod = client.table("products").select("sku, name, price, unit").eq("id", product_id).maybe_single().execute()
+                        if prod and prod.data:
+                            pd = prod.data
+                            client.table("order_items").insert({
+                                "order_id":   order_id,
+                                "product_id": product_id,
+                                "sku":        pd.get("sku", "—"),
+                                "name":       pd.get("name", "—"),
+                                "unit_price": float(pd.get("price") or 0),
+                                "quantity":   1,
+                            }).execute()
+                    except Exception:
+                        pass
+        except Exception as e:
+            # If order creation fails (table missing, RLS, etc.), still
+            # the agreement is confirmed — tracking just won't apply.
+            print(f"Order creation skipped: {e}")
+
+        # 4. Create the order_tracking row in 'confirmed' state
+        if order_id:
+            try:
+                client.table("order_tracking").insert({
+                    "order_id": order_id,
+                    "status":   "confirmed",
+                    "notes":    f"Order created from agreement {req.get('agreement_code', '—')}",
+                }).execute()
+            except Exception:
+                pass
+
+            # 5. Add a timeline event
+            try:
+                client.table("order_timeline").insert({
+                    "order_id": order_id,
+                    "event":     "Agreement confirmed",
+                    "description": f"Merchant {merchant.get('full_name', '—')} confirmed agreement {req.get('agreement_code', '—')}.",
+                    "actor_id":  merchant["id"],
+                }).execute()
+            except Exception:
+                pass
+
+        # 6. Notify the producer
         try:
             client.table("notifications").insert({
                 "user_id": req["producer_id"],
@@ -220,7 +332,10 @@ def _confirm_request(req: dict, merchant: dict):
                 "title": "✅ Agreement Confirmed!",
                 "message": (
                     f"{merchant['full_name']} has confirmed your supply agreement "
-                    f"({req.get('agreement_code', '—')}). You can now start processing orders!"
+                    f"({req.get('agreement_code', '—')}). "
+                    + (f"An order has been created — you can now start processing and shipping it."
+                       if order_id else
+                       "You can now start preparing the delivery.")
                 ),
                 "type": "success",
             }).execute()
@@ -228,6 +343,11 @@ def _confirm_request(req: dict, merchant: dict):
             pass
 
         st.success("✅ Agreement confirmed! The producer has been notified.")
+        if order_id:
+            st.info(
+                "📦 An order has been created automatically. Both you and the "
+                "producer can now track the shipment from **My Orders** / **Orders**."
+            )
         st.rerun()
     except Exception as e:
         st.error(f"Failed to confirm: {e}")
