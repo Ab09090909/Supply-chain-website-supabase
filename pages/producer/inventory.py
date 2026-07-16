@@ -9,6 +9,7 @@ from database.connection import get_supabase_client
 from utils.ui import page_header
 from utils.helpers import format_currency, format_unit
 from utils.storage import render_image_uploader
+from utils.reviews_ui import render_product_card_stars
 from utils.constants import (
     PRODUCT_CATEGORIES, UNIT_OPTIONS, QUALITY_GRADES,
     CERTIFICATION_OPTIONS, CURRENCY_SYMBOL,
@@ -458,6 +459,9 @@ def render_producer_inventory():
               <div class="pi-product-meta">{meta_html}</div>
             </div>
             """)
+            # Star rating for this product — always shown so producers can
+            # see at a glance which of their products buyers have rated.
+            render_product_card_stars(p)
 
         with col_stats:
             st.html(f"""
@@ -988,3 +992,29 @@ def _render_edit_product(client, user: dict, product_id: str) -> None:
                             "of this product and that you're logged in. Try logging "
                             "out and back in."
                         )
+                    else:
+                        st.error(f"Failed to save changes: {e}")
+
+    # ── Delete button (outside the form, since it doesn't need validation) ──
+    st.html('<hr class="pi-divider"/>')
+    st.markdown("#### 🗑️ Delete this product")
+    st.caption(
+        "Deletion is permanent. If this product has been ordered before, "
+        "the deletion will fail and you should set its status to **inactive** instead."
+    )
+    if st.button("🗑️ Delete product permanently", type="primary", key=f"edit_delete_{product_id}"):
+        try:
+            client.table("products").delete().eq("id", product_id).execute()
+            st.success("✅ Product deleted.")
+            st.session_state.pop("editing_product", None)
+            st.rerun()
+        except Exception as e:
+            err = str(e).lower()
+            if "foreign key" in err or "violates" in err or "restrict" in err:
+                st.error(
+                    "❌ Cannot delete this product because it is referenced by "
+                    "existing orders. Set its status to **inactive** instead to "
+                    f"hide it from the marketplace. Detail: {e}"
+                )
+            else:
+                st.error(f"Failed to delete: {e}")
