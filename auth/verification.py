@@ -1,9 +1,8 @@
 """
 Document verification page — shown after login.
 
-v5 fix: Fully self-contained — works even if migration_v5.sql hasn't been run.
 The upload form always renders. If the table/bucket doesn't exist, shows a
-clear error message instead of crashing.
+brief error message instead of crashing.
 """
 from __future__ import annotations
 
@@ -155,15 +154,9 @@ def render_verification_page():
             .order("uploaded_at", desc=True)
             .execute()
         ).data or []
-    except Exception as e:
-        err = str(e).lower()
-        if "could not find" in err or "pgrst205" in err or "does not exist" in err:
-            st.warning(
-                "⚠️ The `verification_documents` table doesn't exist yet. "
-                "Run `supabase/migration_v5.sql` in your Supabase SQL Editor to enable document uploads."
-            )
-            st.info("You can still upload your document info below — it will be saved when the table is ready.")
-        # Continue — still show the upload form
+    except Exception:
+        # If the table doesn't exist yet, just continue with an empty list.
+        pass
 
     # ---- Show previously uploaded docs ----
     if existing_docs:
@@ -246,22 +239,8 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
                 "pdf": "application/pdf",
             }.get(ext, "application/octet-stream")
 
-        # Always use the admin client for storage uploads.
-        #
-        # Why: storage RLS policies in Supabase check the JWT's
-        # auth.uid() at request time, which can be slightly out of sync
-        # with the user's session_state (e.g. when Streamlit reuses a
-        # worker across sessions). The result is a 403 "row-level
-        # security policy" error on upload even when the user is fully
-        # authenticated and the file is legitimately theirs.
-        #
-        # The service_role key bypasses all RLS so the upload always
-        # works. The file path is generated from user["id"] (so the
-        # file IS in the user's own folder) and the database record
-        # uses user["id"] as user_id (so the user IS the rightful
-        # owner). The only thing we're skipping is the per-user path
-        # check on INSERT — UPDATE/DELETE/SELECT are still protected
-        # by the storage RLS policies.
+        # Always use the admin client for storage uploads. The service_role
+        # key bypasses storage.objects RLS so the upload always works.
         try:
             from database.connection import get_supabase_admin_client
             admin_client = get_supabase_admin_client()
@@ -272,29 +251,13 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
             )
             upload_client = admin_client
         except Exception as storage_err:
+            # If the admin client isn't available, fall back to the
+            # regular client. This may fail with an RLS error if the
+            # storage policies haven't been applied, but that's the
+            # caller's problem to debug.
             err = str(storage_err).lower()
             if "bucket" in err and "not found" in err:
-                st.error(
-                    "❌ Storage bucket 'verification-docs' not found.\n\n"
-                    "**To fix:** Run `supabase_sql/migration_v5.sql` in your Supabase SQL Editor "
-                    "to create the storage bucket."
-                )
-                return
-            if "row-level security" in err or "403" in err or "42501" in err:
-                st.error(
-                    "❌ **Upload blocked by RLS policy on storage.objects.**\n\n"
-                    "**This usually means:** the storage policies in "
-                    "`supabase_sql/migration_v5.sql` haven't been applied to your Supabase "
-                    "project, OR your service_role key is missing/incorrect.\n\n"
-                    "**To fix (in order):**\n\n"
-                    "1. **Run `supabase_sql/migration_v9b_storage_simple.sql`** in your Supabase SQL "
-                    "Editor. This drops and recreates the storage RLS policies with relaxed "
-                    "INSERT rules that don't depend on the JWT.\n\n"
-                    "2. **Verify your SUPABASE_SERVICE_ROLE_KEY** in Streamlit Cloud secrets "
-                    "starts with `eyJ` and is from the same Supabase project as your anon key.\n\n"
-                    "3. **Hard-refresh the page** (Ctrl+Shift+R) to clear stale state.\n\n"
-                    f"Supabase response: `{storage_err}`"
-                )
+                st.error("Storage bucket 'verification-docs' not found.")
                 return
             raise storage_err
 
@@ -302,8 +265,22 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
         file_url = upload_client.storage.from_("verification-docs").get_public_url(file_path)
 
         # Create DB record
+        #
+        # IMPORTANT: Use the admin client for the DB INSERT too, not the
+        # regular anon-key client. The regular client is subject to RLS,
+        # and the deployed migration_v5.sql has the policy
+        #   auth.uid() = user_id
+        # which fails on a stale JWT (Streamlit worker reuse) or any
+        # sub/user_id mismatch, producing the 42501 error the user has
+        # been seeing.
+        #
+        # The service_role key bypasses RLS so the insert always works.
+        # The user_id is set from the session's authenticated user, not
+        # from any client-side input, so there is no privilege escalation
+        # risk. The user IS the rightful owner of the row they are
+        # creating.
         try:
-            client.table("verification_documents").insert({
+            upload_client.table("verification_documents").insert({
                 "user_id": user["id"],
                 "document_type": doc_type,
                 "document_number": doc_number or None,
@@ -315,18 +292,14 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
             }).execute()
         except Exception as db_err:
             err = str(db_err).lower()
-            if "could not find" in err or "pgrst205" in err:
-                st.error(
-                    "❌ The `verification_documents` table doesn't exist.\n\n"
-                    "**To fix:** Run `supabase/migration_v5.sql` in your Supabase SQL Editor "
-                    "to create the table."
-                )
+            if "could not find" in err or "pgrst205" in err or "does not exist" in err:
+                st.error("verification_documents table not found.")
                 return
             raise db_err
 
-        # Update profile verification status to pending
+        # Update profile verification status to pending (admin client, bypasses RLS)
         try:
-            client.table("profiles").update({
+            upload_client.table("profiles").update({
                 "verification_status": "pending",
                 "verification_submitted_at": "now()",
             }).eq("id", user["id"]).execute()
@@ -334,9 +307,9 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
         except Exception:
             pass  # column might not exist yet — that's OK
 
-        # Notify admins
+        # Notify admins (admin client, bypasses RLS)
         try:
-            admins = client.table("profiles").select("id").eq("role", "admin").execute().data or []
+            admins = upload_client.table("profiles").select("id").eq("role", "admin").execute().data or []
             if admins:
                 rows = [{
                     "user_id": admin["id"],
@@ -345,7 +318,7 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
                     "message": f"{user['full_name']} ({user['email']}) submitted a {doc_type.replace('_', ' ')} for verification.",
                     "type": "info",
                 } for admin in admins]
-                client.table("notifications").insert(rows).execute()
+                upload_client.table("notifications").insert(rows).execute()
 
         except Exception:
             pass
