@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import streamlit as st
+from datetime import date
 
 from auth.session import get_current_user
 from database.connection import get_supabase_client
@@ -225,6 +226,16 @@ def render_producer_inventory():
         return
 
     client = get_supabase_client()
+
+    # ── Edit product (if one is selected) ──────────────────────────────────
+    # The Edit button on each product card sets st.session_state["editing_product"]
+    # to the product id, then reruns. On the next render we look it up and
+    # show a full edit form. This was missing before — clicking Edit just
+    # set the session state and the button appeared to do nothing.
+    editing_id = st.session_state.get("editing_product")
+    if editing_id:
+        _render_edit_product(client, user, editing_id)
+        return  # Don't show the rest of the inventory while editing
 
     # ── Add product form ─────────────────────────────────────────────────────
     with st.expander("➕  Add new product", expanded=False):
@@ -475,3 +486,281 @@ def render_producer_inventory():
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.html('<hr class="pi-divider" style="margin:10px 0 14px;"/>')
+
+
+# ---------------------------------------------------------------------------
+# Edit product form
+# ---------------------------------------------------------------------------
+def _render_edit_product(client, user: dict, product_id: str) -> None:
+    """Render the edit form for a single product.
+
+    Looks up the product, prefills the form with its current values, and
+    saves changes to the database on submit. Also has a "Delete" action
+    and a "Cancel" button to close the editor without saving.
+
+    Visual design: same dark-green page header as the inventory list,
+    followed by a clean form card with all the same fields as the
+    "Add new product" form so the producer sees a consistent UI.
+    """
+    # Fetch the product
+    try:
+        product = (
+            client.table("products")
+            .select("*")
+            .eq("id", product_id)
+            .eq("producer_id", user["id"])  # security: only owner can edit
+            .maybe_single()
+            .execute()
+        ).data
+    except Exception as e:
+        st.error(f"Failed to load product: {e}")
+        if st.button("← Back to inventory"):
+            st.session_state.pop("editing_product", None)
+            st.rerun()
+        return
+
+    if not product:
+        st.error(
+            "❌ Product not found, or you don't have permission to edit it. "
+            "It may have been deleted by another admin."
+        )
+        if st.button("← Back to inventory"):
+            st.session_state.pop("editing_product", None)
+            st.rerun()
+        return
+
+    # Page header — same style as the inventory list, but with a back button
+    st.html(f"""
+    <div class="pi-page-header">
+      <div class="pi-header-icon">✏️</div>
+      <div>
+        <h1>Edit Product</h1>
+        <p>Update the details of <b>{product.get('name', '—')}</b> ({product.get('sku', '—')})</p>
+      </div>
+    </div>
+    """)
+
+    # Action row: Back / Save / Delete
+    action_cols = st.columns([1, 1, 1, 3])
+    with action_cols[0]:
+        if st.button("← Back", key="edit_back", use_container_width=True):
+            st.session_state.pop("editing_product", None)
+            st.rerun()
+
+    # ── Image uploader (preserves the existing image as the starting point)
+    _section("Product Image")
+    edit_image_url, _ = render_image_uploader(
+        label="Update product image (optional)",
+        folder="products",
+        current_url=product.get("image_url"),
+        key=f"edit_product_image_{product_id}",
+    )
+
+    with st.form(f"edit_product_form_{product_id}"):
+        _section("Basic Information")
+        col1, col2 = st.columns(2)
+        with col1:
+            # SKU is usually immutable — show as read-only so producers
+            # don't accidentally break orders that reference it
+            st.text_input(
+                "SKU",
+                value=product.get("sku", ""),
+                disabled=True,
+                help="SKU is immutable to preserve order history references.",
+            )
+            edit_name = st.text_input(
+                "Product name *",
+                value=product.get("name", ""),
+            )
+            edit_category = st.selectbox(
+                "Category *",
+                PRODUCT_CATEGORIES,
+                index=(
+                    PRODUCT_CATEGORIES.index(product["category"])
+                    if product.get("category") in PRODUCT_CATEGORIES
+                    else 0
+                ),
+            )
+        with col2:
+            edit_price = st.number_input(
+                f"Unit price ({CURRENCY_SYMBOL}) *",
+                min_value=0.0,
+                value=float(product.get("price") or 0),
+                step=10.0,
+            )
+            edit_stock = st.number_input(
+                "Stock quantity *",
+                min_value=0,
+                value=int(product.get("stock") or 0),
+                step=1,
+            )
+            current_unit = product.get("unit", "unit")
+            unit_index = UNIT_OPTIONS.index(current_unit) if current_unit in UNIT_OPTIONS else 0
+            edit_unit = st.selectbox(
+                "Unit *",
+                UNIT_OPTIONS,
+                index=unit_index,
+            )
+
+        _section("Quality & Branding")
+        col_q1, col_q2 = st.columns(2)
+        with col_q1:
+            current_qg = product.get("quality_grade") or "(none)"
+            qg_index = (
+                (["(none)"] + QUALITY_GRADES).index(current_qg)
+                if current_qg in (["(none)"] + QUALITY_GRADES)
+                else 0
+            )
+            edit_quality_grade = st.selectbox(
+                "Quality Grade",
+                ["(none)"] + QUALITY_GRADES,
+                index=qg_index,
+            )
+            edit_brand = st.text_input(
+                "Brand",
+                value=product.get("brand", "") or "",
+            )
+        with col_q2:
+            edit_model = st.text_input(
+                "Model / Variant",
+                value=product.get("model", "") or "",
+            )
+            edit_origin = st.text_input(
+                "Origin",
+                value=product.get("origin", "") or "",
+            )
+
+        _section("Certifications & Dates")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.caption("Certifications (tick all that apply)")
+            existing_certs = product.get("certifications") or []
+            if not isinstance(existing_certs, list):
+                existing_certs = [str(existing_certs)]
+            certs_selected = []
+            certs_cols = st.columns(3)
+            for i, cert in enumerate(CERTIFICATION_OPTIONS):
+                with certs_cols[i % 3]:
+                    if st.checkbox(cert, value=(cert in existing_certs), key=f"edit_cert_{cert}"):
+                        certs_selected.append(cert)
+        with col_c2:
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                # date_input doesn't accept None, so we use a "clear" trick
+                try:
+                    edit_production_date = st.date_input(
+                        "Production date",
+                        value=(
+                            date.fromisoformat(product["production_date"])
+                            if product.get("production_date")
+                            else None
+                        ),
+                    )
+                except Exception:
+                    edit_production_date = st.date_input("Production date", value=None)
+            with col_d2:
+                try:
+                    edit_expiry_date = st.date_input(
+                        "Expiry date",
+                        value=(
+                            date.fromisoformat(product["expiry_date"])
+                            if product.get("expiry_date")
+                            else None
+                        ),
+                    )
+                except Exception:
+                    edit_expiry_date = st.date_input("Expiry date", value=None)
+
+        _section("Inventory Management")
+        col_i1, col_i2 = st.columns(2)
+        with col_i1:
+            edit_reorder_point = st.number_input(
+                "Reorder point",
+                min_value=0,
+                value=int(product.get("reorder_point") or 0),
+            )
+        with col_i2:
+            edit_reorder_qty = st.number_input(
+                "Reorder quantity",
+                min_value=0,
+                value=int(product.get("reorder_quantity") or 0),
+            )
+
+        edit_description = st.text_area(
+            "Description",
+            value=product.get("description", "") or "",
+        )
+
+        # Status field (not in the add form because new products are always
+        # 'active', but editing lets you deactivate a product too)
+        edit_status = st.selectbox(
+            "Status",
+            ["active", "inactive", "draft"],
+            index=["active", "inactive", "draft"].index(product.get("status", "active")),
+            help="Set to inactive to hide the product from the marketplace without deleting it.",
+        )
+
+        # Save button
+        submitted = st.form_submit_button("💾 Save changes", type="primary")
+        if submitted:
+            if not edit_name:
+                st.error("Product name is required.")
+            else:
+                try:
+                    update_payload = {
+                        "name": edit_name,
+                        "description": edit_description or None,
+                        "category": edit_category,
+                        "price": edit_price,
+                        "stock": edit_stock,
+                        "unit": edit_unit,
+                        "reorder_point": edit_reorder_point,
+                        "reorder_quantity": edit_reorder_qty,
+                        "status": edit_status,
+                        "image_url": edit_image_url or product.get("image_url"),
+                        "quality_grade": edit_quality_grade if edit_quality_grade != "(none)" else None,
+                        "brand": edit_brand or None,
+                        "model": edit_model or None,
+                        "origin": edit_origin or None,
+                        "certifications": certs_selected if certs_selected else None,
+                        "production_date": str(edit_production_date) if edit_production_date else None,
+                        "expiry_date": str(edit_expiry_date) if edit_expiry_date else None,
+                    }
+                    client.table("products").update(update_payload).eq("id", product_id).execute()
+                    st.success(f"✅ '{edit_name}' updated successfully.")
+                    st.session_state.pop("editing_product", None)
+                    st.rerun()
+                except Exception as e:
+                    err = str(e).lower()
+                    if "row-level security" in err or "42501" in err:
+                        st.error(
+                            "❌ Permission denied by RLS. Make sure you are the owner "
+                            "of this product and that you're logged in. Try logging "
+                            "out and back in."
+                        )
+                    else:
+                        st.error(f"Failed to save changes: {e}")
+
+    # ── Delete button (outside the form, since it doesn't need validation) ──
+    st.html('<hr class="pi-divider"/>')
+    st.markdown("#### 🗑️ Delete this product")
+    st.caption(
+        "Deletion is permanent. If this product has been ordered before, "
+        "the deletion will fail and you should set its status to **inactive** instead."
+    )
+    if st.button("🗑️ Delete product permanently", type="primary", key=f"edit_delete_{product_id}"):
+        try:
+            client.table("products").delete().eq("id", product_id).execute()
+            st.success("✅ Product deleted.")
+            st.session_state.pop("editing_product", None)
+            st.rerun()
+        except Exception as e:
+            err = str(e).lower()
+            if "foreign key" in err or "violates" in err or "restrict" in err:
+                st.error(
+                    "❌ Cannot delete this product because it is referenced by "
+                    "existing orders. Set its status to **inactive** instead to "
+                    f"hide it from the marketplace. Detail: {e}"
+                )
+            else:
+                st.error(f"Failed to delete: {e}")
