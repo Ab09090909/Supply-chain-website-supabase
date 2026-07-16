@@ -15,6 +15,7 @@ from __future__ import annotations
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from typing import Optional
 
 from auth.session import get_current_user
 from database.connection import get_supabase_admin_client, get_supabase_client
@@ -28,6 +29,192 @@ from pages.admin._card import (
 )
 
 
+# ─── CSS for user management card + document cards ──────────────────────────
+# Injected by render_admin_management() right after inject_card_css(). Scoped
+# to the .um- class prefix to avoid collisions with the dashboard's CSS.
+_USER_MANAGEMENT_CSS = """
+<style>
+.um-user-card {
+    background: #ffffff;
+    border: 1px solid #e4ece6;
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+.um-user-card:hover {
+    box-shadow: 0 4px 14px rgba(16,185,129,0.10);
+    transform: translateY(-1px);
+}
+.um-user-card-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1 1 50%;
+    min-width: 0;
+}
+.um-user-info { min-width: 0; }
+.um-user-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+    word-break: break-word;
+}
+.um-user-email {
+    font-size: 0.82rem;
+    color: #64748b;
+    margin-top: 2px;
+    word-break: break-all;
+}
+.um-user-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.um-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+.um-user-card-right {
+    flex: 1 1 50%;
+    min-width: 0;
+    padding-left: 14px;
+    border-left: 1px solid #f1f5f9;
+}
+.um-user-verif {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.um-user-meta {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.um-doc-card {
+    background: #f8fafc;
+    border: 1px solid #e4ece6;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 8px 0 10px 0;
+}
+.um-doc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+.um-doc-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.um-doc-filename {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 2px;
+    word-break: break-all;
+}
+.um-doc-status {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+.um-doc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 10px;
+    font-size: 0.78rem;
+    color: #64748b;
+}
+</style>
+"""
+
+
+def _resolve_doc_preview_url(doc: dict, client) -> tuple[Optional[str], str]:
+    """Resolve a usable preview URL for a verification document.
+
+    Tries, in order:
+      1. Signed URL via the admin client (works on private buckets)
+      2. The stored public URL (works on public buckets)
+      3. Returns (None, "no-url") if neither works.
+
+    Returns:
+        (url, source_label) where source_label is one of
+        "signed", "public", "no-url" — shown as a small caption next
+        to the preview so the admin knows which access path is in use.
+    """
+    file_url = doc.get("file_url")
+    if not file_url:
+        return None, "no-url"
+
+    # Clean up: if the stored value is itself malformed (e.g. someone
+    # accidentally saved a JSON-encoded dict), extract the URL from it.
+    if file_url.startswith("[") or file_url.startswith("{"):
+        import json as _json
+        try:
+            parsed = _json.loads(file_url)
+            if isinstance(parsed, dict):
+                file_url = (
+                    parsed.get("signedURL")
+                    or parsed.get("signedUrl")
+                    or parsed.get("url")
+                    or file_url
+                )
+            elif isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                file_url = (
+                    parsed[0].get("signedURL")
+                    or parsed[0].get("signedUrl")
+                    or parsed[0].get("url")
+                    or file_url
+                )
+        except Exception:
+            pass  # leave as-is, will be used as a (broken) URL
+
+    # Try to get a signed URL (works on private buckets)
+    try:
+        marker = "/verification-docs/"
+        idx = file_url.find(marker)
+        if idx >= 0:
+            bucket_path = file_url[idx + len(marker):]
+            # Strip any query string before passing to create_signed_url
+            if "?" in bucket_path:
+                bucket_path = bucket_path.split("?", 1)[0]
+            try:
+                admin_client = get_supabase_admin_client()
+                signed = admin_client.storage.from_("verification-docs").create_signed_url(
+                    bucket_path, expires_in=300
+                )
+                if signed and signed.startswith("http"):
+                    return signed, "signed"
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Fall back to whatever URL is in the DB
+    if file_url.startswith("http"):
+        return file_url, "public"
+    return None, "no-url"
+
+
 def render_admin_management():
     page_header("⚙️ Management", "Comprehensive admin control center")
 
@@ -37,6 +224,7 @@ def render_admin_management():
 
     # Inject the card CSS once for the whole page (idempotent).
     inject_card_css()
+    st.markdown(_USER_MANAGEMENT_CSS, unsafe_allow_html=True)
 
     sub1, sub2, sub3 = st.tabs([
         "👥 User Management",
@@ -115,50 +303,124 @@ def _render_user_management(admin: dict):
 
 
 def _render_user_card(u: dict, admin: dict):
-    """Render a single user card with verification + management actions."""
+    """Render a single user card with verification + management actions.
+
+    Visual design: a modern card with:
+      • Left: avatar + name + email (with gradient ring around avatar)
+      • Middle: role badge + verification status pill
+      • Right: action status (active/deactivated) + Manage button
+      • Bottom: compact meta line (phone, location, joined)
+    """
     is_self = u["id"] == admin["id"]
     verif_status = u.get("verification_status", "pending")
     verif_color = {"verified": "#10b981", "pending": "#f59e0b", "rejected": "#ef4444"}.get(verif_status, "#64748b")
     verif_emoji = {"verified": "✅", "pending": "⏳", "rejected": "❌"}.get(verif_status, "❓")
+    is_active = bool(u.get("is_active"))
+    role = u.get("role", "—").title()
 
-    with st.container(border=True):
-        col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-        with col1:
-            avatar_url = u.get("avatar_url")
-            if avatar_url:
-                st.markdown(
-                    f"<div style='display:flex; align-items:center; gap:0.75rem;'>"
-                    f"<img src='{avatar_url}' style='width:40px; height:40px; border-radius:50%; object-fit:cover;' />"
-                    f"<div><strong>{u.get('full_name', '—')}</strong><br/>"
-                    f"<span style='color:#64748b; font-size:0.85rem;'>{u.get('email', '')}</span></div></div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(f"**{u.get('full_name', '—')}**")
-                st.caption(u.get("email", ""))
-            st.markdown(role_badge(u.get("role", "")), unsafe_allow_html=True)
-        with col2:
-            st.markdown(f"**Verification:** <span style='color:{verif_color};'>{verif_emoji} {verif_status.title()}</span>", unsafe_allow_html=True)
-            st.caption(f"📞 {u.get('phone', '—')} · 📍 {u.get('location', '—')}")
-            st.caption(f"Joined: {format_datetime(u.get('created_at'), '%Y-%m-%d')}")
-        with col3:
-            st.metric("Active", "✅" if u.get("is_active") else "❌")
-        with col4:
-            if is_self:
-                st.caption("(You)")
-            else:
-                if st.button("Manage", key=f"manage_{u['id']}", use_container_width=True):
+    # Render the card as a styled HTML block — looks consistent and clean
+    avatar_url = u.get("avatar_url")
+    if avatar_url:
+        avatar_html = (
+            f"<img src='{avatar_url}' "
+            f"style='width:56px; height:56px; border-radius:50%; object-fit:cover; "
+            f"border:3px solid #10b981; box-shadow:0 2px 8px rgba(16,185,129,0.25);' />"
+        )
+    else:
+        # Initials avatar
+        initials = "".join(
+            p[0].upper() for p in (u.get("full_name") or u.get("email") or "?").split()[:2]
+        )
+        avatar_html = (
+            f"<div style='width:56px; height:56px; border-radius:50%; "
+            f"background:linear-gradient(135deg,#10b981 0%,#059669 100%); "
+            f"display:flex; align-items:center; justify-content:center; "
+            f"color:#fff; font-weight:700; font-size:1.2rem; "
+            f"box-shadow:0 2px 8px rgba(16,185,129,0.3);'>{initials}</div>"
+        )
+
+    # Role badge colors
+    role_colors = {
+        "Producer": ("#dcfce7", "#166534"),
+        "Merchant": ("#dbeafe", "#1e40af"),
+        "Customer": ("#fef3c7", "#92400e"),
+        "Admin":    ("#fee2e2", "#991b1b"),
+    }
+    role_bg, role_fg = role_colors.get(role, ("#f1f5f9", "#475569"))
+
+    # Active status pill
+    active_bg = "#dcfce7" if is_active else "#fee2e2"
+    active_fg = "#166534" if is_active else "#991b1b"
+    active_text = "Active" if is_active else "Deactivated"
+
+    # Phone + location line (hide None values)
+    phone = u.get("phone") or "—"
+    location = u.get("location") or "—"
+    joined = format_datetime(u.get("created_at"), "%Y-%m-%d") if u.get("created_at") else "—"
+
+    st.markdown(
+        f"""
+        <div class="um-user-card">
+          <div class="um-user-card-left">
+            {avatar_html}
+            <div class="um-user-info">
+              <div class="um-user-name">{u.get('full_name', '—')}</div>
+              <div class="um-user-email">{u.get('email', '')}</div>
+              <div class="um-user-badges">
+                <span class="um-pill" style="background:{role_bg}; color:{role_fg};">{role}</span>
+                <span class="um-pill" style="background:{active_bg}; color:{active_fg};">● {active_text}</span>
+              </div>
+            </div>
+          </div>
+          <div class="um-user-card-right">
+            <div class="um-user-verif" style="color:{verif_color};">
+              {verif_emoji} <span>Verification: <strong>{verif_status.title()}</strong></span>
+            </div>
+            <div class="um-user-meta">
+              📞 {phone} &nbsp;·&nbsp; 📍 {location}
+            </div>
+            <div class="um-user-meta">
+              📅 Joined {joined}
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Action button (right-aligned, below the card)
+    if is_self:
+        st.caption("👤 (This is your own account)")
+    else:
+        # Two side-by-side buttons: Manage and quick Activate/Deactivate
+        col_a, col_b, _spacer = st.columns([1, 1, 4])
+        with col_a:
+            label = "📋 Manage" if st.session_state.get("managing_user") != u["id"] else "✕ Close"
+            btn_type = "secondary" if st.session_state.get("managing_user") != u["id"] else "primary"
+            if st.button(label, key=f"manage_{u['id']}", use_container_width=True, type=btn_type):
+                if st.session_state.get("managing_user") == u["id"]:
+                    st.session_state.pop("managing_user", None)
+                else:
                     st.session_state["managing_user"] = u["id"]
-                    st.rerun()
+                st.rerun()
+        with col_b:
+            toggle_label = "🚫 Deactivate" if is_active else "✅ Activate"
+            if st.button(toggle_label, key=f"toggle_{u['id']}", use_container_width=True):
+                _toggle_user_active(u, not is_active, admin)
 
-        # Expandable management panel
-        if st.session_state.get("managing_user") == u["id"]:
-            with st.expander(f"📋 Manage {u.get('full_name', 'User')}", expanded=True):
-                _render_user_management_panel(u, admin)
+    # Expandable management panel — only renders for the selected user
+    if st.session_state.get("managing_user") == u["id"]:
+        _render_user_management_panel(u, admin)
 
 
 def _render_user_management_panel(u: dict, admin: dict):
-    """Detailed management panel for a single user."""
+    """Detailed management panel for a single user.
+
+    Visual design: a clean white panel with three sections:
+      1) Header (gradient green) showing the user being managed
+      2) Verification Documents (with previews + actions)
+      3) User Actions (verify, reject, activate, delete, close)
+    """
     try:
         client = get_supabase_admin_client()
     except Exception:
@@ -179,58 +441,66 @@ def _render_user_management_panel(u: dict, admin: dict):
 
     if docs:
         for doc in docs:
-            col1, col2, col3 = st.columns([2, 1, 2])
-            with col1:
-                doc_type = doc.get("document_type", "unknown").replace("_", " ").title()
-                st.markdown(f"**{doc_type}**")
-                st.caption(f"File: {doc.get('document_name', '—')}")
-                if doc.get("document_number"):
-                    st.caption(f"Number: `{doc['document_number']}`")
-                st.caption(f"Uploaded: {format_datetime(doc.get('uploaded_at'))}")
-            with col2:
-                doc_status = doc.get("status", "pending")
-                st.markdown(f"**Status:** {doc_status.title()}")
-            with col3:
-                # Preview the document. The file_url is the *path* inside
-                # the verification-docs bucket (a PRIVATE bucket), so the
-                # public URL we stored at upload time is a 404. We need a
-                # signed URL for the preview to actually work.
-                file_url = doc.get("file_url")
-                if not file_url:
-                    st.caption("No file URL")
-                else:
-                    # file_url is a public-storage URL like
-                    # "https://xxx.supabase.co/storage/v1/object/public/verification-docs/{user}/{uuid}.jpg"
-                    # Extract the path inside the bucket (everything after /verification-docs/)
-                    preview_url = None
-                    try:
-                        marker = "/verification-docs/"
-                        idx = file_url.find(marker)
-                        if idx >= 0:
-                            bucket_path = file_url[idx + len(marker):]
-                            # Use the admin client to create a signed URL.
-                            try:
-                                admin_storage = get_supabase_admin_client().storage
-                                preview_url = admin_storage.from_("verification-docs").create_signed_url(
-                                    bucket_path, expires_in=300
-                                )
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    if not preview_url:
-                        # Fall back to the stored public URL (will 404 on
-                        # private buckets but at least gives a clickable link).
-                        preview_url = file_url
-                    if doc.get("mime_type", "").startswith("image/"):
-                        try:
-                            st.image(preview_url, caption="Document preview", width=200)
-                        except Exception:
-                            st.markdown(f"📄 [View document]({preview_url})")
-                    else:
-                        st.markdown(f"📄 [View document]({preview_url})")
+            doc_type = doc.get("document_type", "unknown").replace("_", " ").title()
+            doc_status = doc.get("status", "pending")
+            doc_status_color = {
+                "approved": "#10b981", "pending": "#f59e0b", "rejected": "#ef4444"
+            }.get(doc_status, "#64748b")
+            doc_status_emoji = {
+                "approved": "✅", "pending": "⏳", "rejected": "❌"
+            }.get(doc_status, "❓")
+            mime = doc.get("mime_type", "")
+            file_size_kb = (doc.get("file_size") or 0) / 1024
 
-            # Approve / Reject buttons for the document
+            # Header row with document info
+            st.markdown(
+                f"""
+                <div class="um-doc-card">
+                  <div class="um-doc-header">
+                    <div>
+                      <div class="um-doc-title">📄 {doc_type}</div>
+                      <div class="um-doc-filename">{doc.get('document_name', '—')}</div>
+                    </div>
+                    <div class="um-doc-status" style="background:{doc_status_color}1A; color:{doc_status_color};">
+                      {doc_status_emoji} {doc_status.title()}
+                    </div>
+                  </div>
+                  <div class="um-doc-meta">
+                    {f'<span>🔢 #{doc["document_number"]}</span>' if doc.get("document_number") else ''}
+                    <span>📦 {file_size_kb:.0f} KB</span>
+                    <span>🗓️ {format_datetime(doc.get('uploaded_at'))}</span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Preview area — try signed URL first, fall back to public URL
+            preview_url, preview_source = _resolve_doc_preview_url(doc, client)
+            if preview_url:
+                if mime.startswith("image/"):
+                    try:
+                        st.image(preview_url, caption=f"Document preview ({preview_source})", width=300)
+                    except Exception:
+                        st.markdown(
+                            f"📄 [**View document**]({preview_url}) "
+                            f"<span style='color:#94a3b8;font-size:0.75rem;'>({preview_source})</span>",
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.markdown(
+                        f"📄 [**Open document in new tab**]({preview_url}) "
+                        f"<span style='color:#94a3b8;font-size:0.75rem;'>({preview_source})</span>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.warning(
+                    "⚠️ Could not generate a preview URL for this document. "
+                    "It may have been deleted from storage, or the storage "
+                    "bucket is misconfigured."
+                )
+
+            # Approve / Reject / Delete buttons
             col_a, col_b, col_c = st.columns(3)
             with col_a:
                 if st.button("✅ Approve Document", key=f"approve_doc_{doc['id']}", use_container_width=True):
@@ -241,33 +511,65 @@ def _render_user_management_panel(u: dict, admin: dict):
             with col_c:
                 if st.button("🗑️ Delete Document", key=f"delete_doc_{doc['id']}", use_container_width=True):
                     _delete_document(doc, admin)
-            st.markdown("---")
+            st.markdown("<br/>", unsafe_allow_html=True)
     else:
         st.info("No verification documents uploaded.")
 
-    # ---- User actions ----
+    # ---- User actions (destructive section) ----
+    st.markdown("---")
     st.markdown("#### ⚙️ User Actions")
 
+    is_active = bool(u.get("is_active"))
+    is_self = u["id"] == admin["id"]
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("✅ Verify User", key=f"verify_user_{u['id']}", use_container_width=True, type="primary"):
+        if st.button(
+            "✅ Verify User",
+            key=f"verify_user_{u['id']}",
+            use_container_width=True,
+            type="primary",
+            disabled=is_self,
+            help="Mark this user as verified (no effect on your own account).",
+        ):
             _verify_user(u, admin)
     with col2:
-        if st.button("❌ Reject Verification", key=f"reject_user_{u['id']}", use_container_width=True):
+        if st.button(
+            "❌ Reject Verification",
+            key=f"reject_user_{u['id']}",
+            use_container_width=True,
+            disabled=is_self,
+        ):
             _reject_user(u, admin)
     with col3:
-        if u.get("is_active"):
-            if st.button("🚫 Deactivate", key=f"deact_{u['id']}", use_container_width=True):
+        if is_active:
+            if st.button(
+                "🚫 Deactivate",
+                key=f"deact_{u['id']}",
+                use_container_width=True,
+                disabled=is_self,
+                help="Deactivated users cannot log in but their data is preserved.",
+            ):
                 _toggle_user_active(u, False, admin)
         else:
-            if st.button("✅ Activate", key=f"act_{u['id']}", use_container_width=True):
+            if st.button(
+                "✅ Activate",
+                key=f"act_{u['id']}",
+                use_container_width=True,
+                disabled=is_self,
+            ):
                 _toggle_user_active(u, True, admin)
     with col4:
-        if st.button("🗑️ Delete User", key=f"delete_user_{u['id']}", use_container_width=True):
+        if st.button(
+            "🗑️ Delete User",
+            key=f"delete_user_{u['id']}",
+            use_container_width=True,
+            disabled=is_self,
+            help="Permanently delete this user. Will fail if they have order history — use Deactivate instead.",
+        ):
             _delete_user(u, admin)
 
     # Close button
-    if st.button("← Close Management Panel", key=f"close_{u['id']}"):
+    if st.button("← Close Management Panel", key=f"close_{u['id']}", use_container_width=True):
         st.session_state.pop("managing_user", None)
         st.rerun()
 
@@ -498,39 +800,100 @@ def _render_product_management(admin: dict):
 
 
 def _render_product_admin_card(p: dict, admin: dict):
+    """Render a product row in the admin Product Management list.
+
+    Visual design: matches the user card style — modern card with
+    image, name, badges, key stats, and a Manage button. Hover effect
+    on the card.
+    """
     producer = p.get("profiles") or {}
-    with st.container(border=True):
-        col1, col2, col3, col4, col5 = st.columns([1, 3, 1, 1, 1])
-        with col1:
-            if p.get("image_url"):
-                try:
-                    st.image(p["image_url"], width=70)
-                except Exception:
-                    st.markdown("📦")
+    status = p.get("status", "active")
+    stock = int(p.get("stock", 0) or 0)
+    reorder = int(p.get("reorder_point", 0) or 0)
+    is_low_stock = stock <= reorder
+    is_out_of_stock = stock == 0
+    is_active = status == "active"
+
+    # Status pill colors
+    status_colors = {
+        "active":   ("#dcfce7", "#166534", "🟢"),
+        "inactive": ("#fee2e2", "#991b1b", "⚪"),
+        "draft":    ("#fef3c7", "#92400e", "📝"),
+    }
+    s_bg, s_fg, s_emoji = status_colors.get(status, ("#f1f5f9", "#475569", "❓"))
+
+    # Image / placeholder
+    image_url = p.get("image_url")
+    if image_url:
+        img_html = (
+            f"<img src='{image_url}' "
+            f"style='width:72px; height:72px; border-radius:10px; object-fit:cover; "
+            f"border:1px solid #e4ece6; box-shadow:0 2px 6px rgba(0,0,0,0.08);' />"
+        )
+    else:
+        img_html = (
+            "<div style='width:72px; height:72px; border-radius:10px; "
+            "background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%); "
+            "display:flex; align-items:center; justify-content:center; "
+            "font-size:2rem; color:#94a3b8; border:1px solid #e4ece6;'>📦</div>"
+        )
+
+    # Stock alert pill
+    if is_out_of_stock:
+        stock_pill = ("#fee2e2", "#991b1b", "❌ Out of stock")
+    elif is_low_stock:
+        stock_pill = ("#fef3c7", "#92400e", f"⚠️ Low stock ({stock})")
+    else:
+        stock_pill = ("#dcfce7", "#166534", f"✅ {stock} in stock")
+
+    sp_bg, sp_fg, sp_text = stock_pill
+
+    st.markdown(
+        f"""
+        <div class="um-user-card">
+          <div class="um-user-card-left">
+            {img_html}
+            <div class="um-user-info">
+              <div class="um-user-name">{p.get('name', '—')}</div>
+              <div class="um-user-email">SKU: <code>{p.get('sku', '—')}</code> · by {producer.get('full_name', 'Unknown')}</div>
+              <div class="um-user-badges">
+                <span class="um-pill" style="background:{s_bg}; color:{s_fg};">{s_emoji} {status.title()}</span>
+                <span class="um-pill" style="background:{sp_bg}; color:{sp_fg};">{sp_text}</span>
+                {f'<span class="um-pill" style="background:#ede9fe; color:#5b21b6;">🏷️ {p.get("category", "—")}</span>' if p.get("category") else ''}
+                {f'<span class="um-pill" style="background:#fef3c7; color:#92400e;">⭐ {p["quality_grade"]}</span>' if p.get("quality_grade") else ''}
+              </div>
+            </div>
+          </div>
+          <div class="um-user-card-right">
+            <div class="um-user-verif" style="color:#047857;">
+              💰 <strong>{format_currency(p.get('price'))}</strong>
+            </div>
+            <div class="um-user-meta">
+              📦 Stock: <strong>{stock}</strong> &nbsp;·&nbsp; 🔄 Reorder at: {reorder}
+            </div>
+            <div class="um-user-meta">
+              🗓️ Listed: {format_datetime(p.get('created_at'), '%Y-%m-%d') if p.get('created_at') else '—'}
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Manage button
+    col_a, _, _ = st.columns([1, 1, 4])
+    with col_a:
+        label = "📋 Manage" if st.session_state.get("managing_product") != p["id"] else "✕ Close"
+        btn_type = "secondary" if st.session_state.get("managing_product") != p["id"] else "primary"
+        if st.button(label, key=f"admin_prod_{p['id']}", use_container_width=True, type=btn_type):
+            if st.session_state.get("managing_product") == p["id"]:
+                st.session_state.pop("managing_product", None)
             else:
-                st.markdown("📦")
-        with col2:
-            st.markdown(f"**{p['name']}**  `{p['sku']}`")
-            st.caption(f"by {producer.get('full_name', '—')} · 🏷️ {p.get('category', '—')}")
-            if p.get("quality_grade") or p.get("brand"):
-                meta = []
-                if p.get("quality_grade"): meta.append(f"⭐ {p['quality_grade']}")
-                if p.get("brand"): meta.append(f"🏷️ {p['brand']}")
-                st.caption(" · ".join(meta))
-        with col3:
-            st.metric("Price", format_currency(p.get("price")))
-        with col4:
-            st.metric("Stock", p.get("stock", 0))
-        with col5:
-            status = p.get("status", "active")
-            st.metric("Status", status.title())
-            if st.button("Manage", key=f"admin_prod_{p['id']}", use_container_width=True):
                 st.session_state["managing_product"] = p["id"]
-                st.rerun()
+            st.rerun()
 
     if st.session_state.get("managing_product") == p["id"]:
-        with st.expander(f"📋 Manage {p['name']}", expanded=True):
-            _render_product_admin_panel(p, admin)
+        _render_product_admin_panel(p, admin)
 
 
 def _render_product_admin_panel(p: dict, admin: dict):
