@@ -45,6 +45,7 @@ _USER_MANAGEMENT_CSS = """
     align-items: center;
     gap: 18px;
     transition: box-shadow 0.2s ease, transform 0.15s ease;
+    flex-wrap: wrap;
 }
 .um-user-card:hover {
     box-shadow: 0 4px 14px rgba(16,185,129,0.10);
@@ -54,7 +55,7 @@ _USER_MANAGEMENT_CSS = """
     display: flex;
     align-items: center;
     gap: 14px;
-    flex: 1 1 50%;
+    flex: 1 1 280px;
     min-width: 0;
 }
 .um-user-info { min-width: 0; }
@@ -74,29 +75,31 @@ _USER_MANAGEMENT_CSS = """
 .um-user-badges {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
     margin-top: 8px;
     align-items: stretch;
+    max-width: 100%;
 }
 .um-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 12px;
+    padding: 3px 10px;
     border-radius: 999px;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    min-width: 130px;
-    height: 32px;
+    min-width: 0;
+    max-width: 100%;
+    height: 24px;
     box-sizing: border-box;
     white-space: nowrap;
     text-align: center;
-    line-height: 1.2;
+    line-height: 1.1;
 }
 .um-user-card-right {
-    flex: 1 1 50%;
+    flex: 1 1 200px;
     min-width: 0;
     padding-left: 14px;
     border-left: 1px solid #f1f5f9;
