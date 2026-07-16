@@ -902,52 +902,145 @@ def _render_product_admin_panel(p: dict, admin: dict):
     except Exception:
         client = get_supabase_client()
 
-    # Show full details
+    # ---- Beautiful product details (no raw JSON) ----
     st.markdown("#### Product Details")
-    st.json({
-        "id": p["id"],
-        "sku": p.get("sku"),
-        "name": p.get("name"),
-        "description": p.get("description"),
-        "category": p.get("category"),
-        "price": p.get("price"),
-        "stock": p.get("stock"),
-        "unit": p.get("unit"),
-        "quality_grade": p.get("quality_grade"),
-        "brand": p.get("brand"),
-        "model": p.get("model"),
-        "origin": p.get("origin"),
-        "certifications": p.get("certifications"),
-        "status": p.get("status"),
-    })
 
-    # Actions
-    st.markdown("#### Actions")
-    col1, col2, col3, col4 = st.columns(4)
+    detail_cols = st.columns([1, 1])
+    with detail_cols[0]:
+        st.markdown(f"**🆔 Product ID:**")
+        st.code(p.get("id", "—"), language="text")
+        st.markdown(f"**📦 Name:** {p.get('name', '—')}")
+        st.markdown(f"**🏷️ SKU:** `{p.get('sku', '—')}`")
+        st.markdown(f"**🗂️ Category:** {p.get('category', '—')}")
+        st.markdown(f"**💰 Price:** {format_currency(p.get('price'))} / {p.get('unit', 'unit')}")
+        st.markdown(f"**📊 Stock:** {p.get('stock', 0)} {p.get('unit', 'units')}")
+        st.markdown(f"**🔄 Reorder at:** {p.get('reorder_point', 0)}")
+    with detail_cols[1]:
+        st.markdown(f"**⭐ Quality Grade:** {p.get('quality_grade') or '—'}")
+        st.markdown(f"**🏢 Brand:** {p.get('brand') or '—'}")
+        st.markdown(f"**🔖 Model:** {p.get('model') or '—'}")
+        st.markdown(f"**📍 Origin:** {p.get('origin') or '—'}")
+        certs = p.get('certifications') or []
+        st.markdown(f"**🏅 Certifications:** {', '.join(certs) if certs else '—'}")
+        status = p.get('status', 'active')
+        status_colors = {
+            "active":   ("#dcfce7", "#166534", "🟢"),
+            "inactive": ("#fee2e2", "#991b1b", "⚪"),
+            "draft":    ("#fef3c7", "#92400e", "📝"),
+        }
+        s_bg, s_fg, s_emoji = status_colors.get(status, ("#f1f5f9", "#475569", "❓"))
+        st.markdown(
+            f"**📌 Status:** <span class='um-pill' style='background:{s_bg}; color:{s_fg};'>{s_emoji} {status.title()}</span>",
+            unsafe_allow_html=True,
+        )
+        if p.get('description'):
+            st.markdown(f"**📝 Description:**")
+            st.caption(p['description'])
+
+    # ---- Activate (only if not active) ----
+    if p.get("status") != "active":
+        st.markdown("---")
+        st.markdown("#### ⚙️ Actions")
+        if st.button("✅ Activate Product", key=f"act_prod_{p['id']}", use_container_width=True, type="primary"):
+            client.table("products").update({"status": "active"}).eq("id", p["id"]).execute()
+            _log_admin_action(admin, "activate_product", "products", p["id"])
+            st.success("Product activated.")
+            st.rerun()
+
+    # ---- Mark Inactive (with reason) ----
+    st.markdown("---")
+    st.markdown("#### 🚫 Mark Inactive")
+    st.caption(
+        "Inactive products are hidden from the marketplace but the data is preserved. "
+        "Add a reason below so the producer knows why their product was taken down."
+    )
+    inactive_reason = st.text_area(
+        "Reason (visible to the producer in their notification)",
+        placeholder="e.g. Stock level too low, missing certifications, image quality issues...",
+        key=f"inact_reason_{p['id']}",
+        height=80,
+    )
+    notify_on_inactive = st.checkbox(
+        "📨 Notify the producer",
+        value=True,
+        key=f"inact_notify_{p['id']}",
+        help="Send a notification to the producer with the reason above.",
+    )
+    col1, col2 = st.columns([1, 1])
     with col1:
-        if p.get("status") != "active":
-            if st.button("✅ Activate", key=f"act_prod_{p['id']}", use_container_width=True):
-                client.table("products").update({"status": "active"}).eq("id", p["id"]).execute()
-                _log_admin_action(admin, "activate_product", "products", p["id"])
-                st.success("Product activated.")
+        if st.button("🚫 Confirm Mark Inactive", key=f"inact_prod_{p['id']}", use_container_width=True, type="primary"):
+            try:
+                client.table("products").update({"status": "inactive"}).eq("id", p["id"]).execute()
+                _log_admin_action(
+                    admin, "deactivate_product", "products", p["id"],
+                    {"reason": inactive_reason, "notified": notify_on_inactive},
+                )
+                if notify_on_inactive:
+                    try:
+                        producer_id = p.get("producer_id")
+                        if producer_id:
+                            msg = f"Your product '{p.get('name', 'Unknown')}' (SKU: {p.get('sku', '—')}) was marked inactive by an admin."
+                            if inactive_reason:
+                                msg += f"\n\nReason: {inactive_reason}"
+                            client.table("notifications").insert({
+                                "user_id": producer_id,
+                                "sender_id": admin["id"],
+                                "title": "🚫 Product Marked Inactive",
+                                "message": msg,
+                                "type": "warning",
+                            }).execute()
+                    except Exception:
+                        pass
+                st.success("Product marked inactive.")
                 st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {e}")
     with col2:
-        if st.button("🚫 Mark Inactive", key=f"inact_prod_{p['id']}", use_container_width=True):
-            client.table("products").update({"status": "inactive"}).eq("id", p["id"]).execute()
-            _log_admin_action(admin, "deactivate_product", "products", p["id"])
-            st.success("Product marked inactive.")
-            st.rerun()
-    with col3:
-        if st.button("🗑️ Delete Product", key=f"del_prod_{p['id']}", use_container_width=True, type="primary"):
-            client.table("products").delete().eq("id", p["id"]).execute()
-            _log_admin_action(admin, "delete_product", "products", p["id"])
-            st.success("Product deleted.")
+        if st.button("← Close", key=f"close_inact_{p['id']}", use_container_width=True):
             st.session_state.pop("managing_product", None)
             st.rerun()
-    with col4:
-        if st.button("← Close", key=f"close_prod_{p['id']}", use_container_width=True):
-            st.session_state.pop("managing_product", None)
-            st.rerun()
+
+    # ---- Delete Product (with reason) ----
+    st.markdown("---")
+    st.markdown("#### 🗑️ Delete Product")
+    st.warning(
+        "⚠️ **This is permanent.** The product and all its data will be erased. "
+        "If this product has orders, the delete will fail — use **Mark Inactive** instead."
+    )
+    delete_reason = st.text_area(
+        "Reason for deletion (logged for audit trail)",
+        placeholder="e.g. Duplicate listing, violates content policy, spam...",
+        key=f"del_reason_{p['id']}",
+        height=80,
+    )
+    confirm_delete = st.text_input(
+        "Type the SKU to confirm deletion",
+        key=f"del_confirm_{p['id']}",
+        placeholder=f"Type '{p.get('sku', '')}' to confirm",
+    )
+    if st.button("🗑️ Delete Product Permanently", key=f"del_prod_{p['id']}", use_container_width=True, type="primary"):
+        if confirm_delete != p.get("sku"):
+            st.error("SKU doesn't match. Deletion cancelled.")
+        else:
+            try:
+                client.table("products").delete().eq("id", p["id"]).execute()
+                _log_admin_action(
+                    admin, "delete_product", "products", p["id"],
+                    {"reason": delete_reason, "sku_confirmed": True},
+                )
+                st.success("Product deleted permanently.")
+                st.session_state.pop("managing_product", None)
+                st.rerun()
+            except Exception as e:
+                err = str(e).lower()
+                if "foreign key" in err or "violates" in err or "restrict" in err:
+                    st.error(
+                        "Cannot delete this product because it is referenced by "
+                        "existing orders. Use **Mark Inactive** instead to hide it "
+                        f"from the marketplace. Detail: {e}"
+                    )
+                else:
+                    st.error(f"Delete failed: {e}")
 
 
 # ---------------------------------------------------------------------------
