@@ -105,14 +105,21 @@ def render_shared_marketplace():
             image_url = p.get("image_url")
             if image_url:
                 img_html = (
-                    f"<div style='height:176px; overflow:hidden; border-radius:10px 10px 0 0; margin:-1rem -1rem 0.75rem -1rem;'>"
-                    f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover;' /></div>"
+                    f"<div style='height:176px; overflow:hidden; border-radius:10px 10px 0 0; margin:-1rem -1rem 0.75rem -1rem; "
+                    f"position:relative;'>"
+                    f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover; transition:transform 0.4s ease;' "
+                    f"onmouseover=\"this.style.transform='scale(1.06)'\" onmouseout=\"this.style.transform='scale(1)'\" />"
+                    f"<div style='position:absolute; inset:0; "
+                    f"background:linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.45) 100%);'></div>"
+                    f"</div>"
                 )
             else:
                 img_html = (
-                    "<div style='height:176px; background:linear-gradient(135deg,#f1f5f9 0%,#e2e8f0 100%); "
+                    "<div style='height:176px; background:linear-gradient(135deg,#a7f3d0 0%, #6ee7b7 50%, #34d399 100%); "
+                    "background-size:200% 200%; animation:gradientShift 8s ease infinite; "
                     "border-radius:10px 10px 0 0; margin:-1rem -1rem 0.75rem -1rem; "
-                    "display:flex; align-items:center; justify-content:center; font-size:3rem; color:#94a3b8;'>📦</div>"
+                    "display:flex; align-items:center; justify-content:center; font-size:3.5rem; "
+                    "box-shadow: inset 0 0 30px rgba(255,255,255,0.3);'>📦</div>"
                 )
 
             producer = p.get("profiles") or {}
@@ -120,28 +127,45 @@ def render_shared_marketplace():
             if p.get("quality_grade") or p.get("brand"):
                 parts = []
                 if p.get("quality_grade"):
-                    parts.append(f"⭐ {p['quality_grade']}")
+                    parts.append(f"<span style='background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-weight:600;'>⭐ {p['quality_grade']}</span>")
                 if p.get("brand"):
-                    parts.append(f"🏷️ {p['brand']}")
-                badges = f"<div style='font-size:0.68rem; color:#64748b; margin:0.25rem 0; font-weight:500;'>{' · '.join(parts)}</div>"
+                    parts.append(f"<span style='background:#ede9fe; color:#5b21b6; padding:2px 8px; border-radius:10px; font-weight:600;'>🏷️ {p['brand']}</span>")
+                badges = f"<div style='font-size:0.68rem; margin:0.3rem 0; display:flex; gap:4px; flex-wrap:wrap;'>{' '.join(parts)}</div>"
 
             st.markdown(
                 f"""
-                <div style='background:#fff; border:1px solid #e8edf2; border-radius:12px;
-                            padding:1rem; box-shadow:0 2px 10px rgba(0,0,0,0.05);
-                            transition:box-shadow 0.2s; margin-bottom:0.25rem;'>
+                <div style='
+                    background:#fff; border:1px solid #e8edf2; border-radius:14px;
+                    padding:1rem; box-shadow:0 2px 10px rgba(0,0,0,0.05);
+                    transition:transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+                    margin-bottom:0.25rem; position:relative; overflow:hidden;
+                    animation: fadeInUp 0.4s ease-out backwards;
+                '
+                onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 28px rgba(16,185,129,0.15)';this.style.borderColor='#a7f3d0';"
+                onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 10px rgba(0,0,0,0.05)';this.style.borderColor='#e8edf2';">
                     {img_html}
-                    <div style='font-size:0.9rem; font-weight:700; color:#0f172a; line-height:1.35; margin-bottom:0.1rem;'>{p['name']}</div>
-                    <div style='font-size:0.72rem; color:#94a3b8; margin-bottom:0.15rem;'>by {producer.get('full_name','Unknown')} · {p.get('category','Other')}</div>
+                    <div style='font-size:0.92rem; font-weight:700; color:#0f172a; line-height:1.35; margin-bottom:0.15rem;'>{p['name']}</div>
+                    <div style='font-size:0.72rem; color:#94a3b8; margin-bottom:0.2rem;'>
+                        by <span style='color:#10b981; font-weight:600;'>{producer.get('full_name','Unknown')}</span>
+                        &nbsp;·&nbsp; {p.get('category','Other')}
+                    </div>
                     {badges}
-                    <div style='font-size:1.15rem; font-weight:800; color:#047857; margin:0.35rem 0 0.1rem 0;'>{format_currency(p['price'])}</div>
-                    <div style='font-size:0.7rem; color:#94a3b8;'>📦 {p['stock']} {format_unit(p.get('unit'))} &nbsp;·&nbsp; 💖 {save_counts.get(p['id'],0)} saved</div>
+                    <div style='display:flex; align-items:baseline; gap:6px; margin:0.4rem 0 0.1rem 0;'>
+                        <div style='font-size:1.25rem; font-weight:800;
+                                    background:linear-gradient(135deg, #047857 0%, #10b981 100%);
+                                    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                                    background-clip:text;'>{format_currency(p['price'])}</div>
+                    </div>
+                    <div style='font-size:0.7rem; color:#94a3b8; display:flex; gap:10px; align-items:center;'>
+                        <span>📦 {p['stock']} {format_unit(p.get('unit'))}</span>
+                        <span>💖 {save_counts.get(p['id'],0)} saved</span>
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            # Star rating (only shown if there are reviews)
+            # Star rating (shown even if no reviews — "No ratings yet" hint)
             render_product_card_stars(p)
 
             # Action buttons below the card
