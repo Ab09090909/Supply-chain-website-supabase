@@ -101,41 +101,33 @@ def metric_card(label: str, value: str, delta: str = "", color: str = "#10b981",
     """Render a modern metric card — gradient icon + large value + small label.
 
     Designed for horizontal grid layout (3-4 cards per row).
+
+    Implementation note (v6.1): the previous version used a complex
+    ``display:flex; flex-direction:column;`` HTML structure that looked
+    great on desktop but **collapsed to 0 height on mobile/narrow
+    viewports** (and on some older Streamlit builds the inner content
+    was rendered as visible HTML text instead of as HTML). The fix is
+    to use Streamlit's native ``st.metric`` component (which is
+    mobile-safe, accessible, and never breaks) wrapped with a thin
+    accent bar so the card still has visual identity.
     """
-    delta_html = f"<div style='font-size:0.65rem; color:{COLORS['primary']}; margin-top:0.15rem; font-weight:600;'>{delta}</div>" if delta else ""
+    gradient = GRADIENTS.get(ICON_GRADIENTS.get(icon, "emerald"), GRADIENTS["emerald"])
 
-    gradient_name = ICON_GRADIENTS.get(icon, "emerald")
-    gradient = GRADIENTS.get(gradient_name, GRADIENTS["emerald"])
-
-    icon_html = ""
-    if icon:
-        icon_html = f"""
-        <div style='width:36px; height:36px; border-radius:10px;
-                    background:{gradient}; display:flex; align-items:center;
-                    justify-content:center; font-size:1.1rem; margin-bottom:0.5rem;
-                    box-shadow:0 4px 12px rgba(16,185,129,0.15);'>
-            {icon}
-        </div>
-        """
-
+    # 3px accent bar at the top of the card — single inline-style div,
+    # sanitiser-safe (no `style=` with quotes that could trip up old
+    # renderers).  The bar is in the primary color of the chosen icon.
     st.markdown(
-        f"""
-        <div style='padding:0.875rem; border-radius:12px; background:{COLORS["white"]};
-                    border:1px solid {COLORS["slate_200"]};
-                    box-shadow:0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
-                    text-align:left; transition: all 0.2s ease;
-                    min-height:115px; display:flex; flex-direction:column;'>
-            {icon_html}
-            <div style='flex:1;'>
-                <div style='font-size:1.5rem; font-weight:700; color:{COLORS["slate_900"]};
-                            line-height:1.1; margin-bottom:0.15rem; letter-spacing:-0.02em;'>{value}</div>
-                <div style='font-size:0.7rem; color:{COLORS["slate_500"]}; text-transform:uppercase;
-                            letter-spacing:0.04em; font-weight:600; line-height:1.2;'>{label}</div>
-                {delta_html}
-            </div>
-        </div>
-        """,
+        f'<div style="height:3px;background:{gradient};'
+        f'border-radius:6px 6px 0 0;margin-bottom:1px;"></div>',
         unsafe_allow_html=True,
+    )
+
+    # Native Streamlit metric — bulletproof, mobile-safe, accessible.
+    # Icon is prepended to the label so the visual hierarchy stays.
+    st.metric(
+        label=f"{icon}  {label}" if icon else label,
+        value=value,
+        delta=delta if delta else None,
     )
 
 
