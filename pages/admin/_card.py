@@ -154,7 +154,11 @@ def admin_card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
         subtitle:     the small caption under the title
         metrics_html: the pre-built HTML string of metric boxes
     """
-    st.markdown(
+    # Use _html() so the multi-line HTML is rendered as raw HTML
+    # instead of being mis-interpreted as a Markdown code block (which
+    # would show the raw <div> source on the page).
+    from utils.ui import _html
+    _html(
         f"""
         <div class="dash-card">
           <div class="dash-card-header">
@@ -170,6 +174,5 @@ def admin_card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
             </div>
           </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
