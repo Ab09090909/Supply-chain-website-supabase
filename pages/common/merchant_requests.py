@@ -383,17 +383,68 @@ def _render_producer_details(req: dict, producer: dict):
             )
 
             st.markdown("---")
-            st.markdown("**📊 Portfolio Summary**")
-            sm1, sm2, sm3, sm4 = st.columns(4)
-            with sm1:
-                st.metric("🛒 Active products", len(products))
-            with sm2:
-                st.metric("📦 Total stock", f"{total_stock:,}")
-            with sm3:
-                st.metric("💰 Inventory value", format_currency(total_value))
-            with sm4:
-                st.metric(f"{'⭐ Avg rating' if avg_rating else '⭐ No ratings yet'}",
-                          f"{avg_rating:.2f}" if avg_rating else "—")
+            st.markdown("#### 📊 Portfolio Summary")
+
+            # Build the same beautiful KPI card style used at the top of the page
+            # (green icon + label + big number, white card with subtle border)
+            kpi_cards = (
+                f"""
+                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+                            padding:14px 16px; text-align:center;
+                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
+                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
+                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
+                        🛒 Active products
+                    </div>
+                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
+                        {len(products)}
+                    </div>
+                </div>
+                """
+                f"""
+                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+                            padding:14px 16px; text-align:center;
+                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
+                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
+                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
+                        📦 Total stock
+                    </div>
+                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
+                        {total_stock:,}
+                    </div>
+                </div>
+                """
+                f"""
+                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+                            padding:14px 16px; text-align:center;
+                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
+                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
+                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
+                        💰 Inventory value
+                    </div>
+                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
+                        {format_currency(total_value)}
+                    </div>
+                </div>
+                """
+                f"""
+                <div style='background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+                            padding:14px 16px; text-align:center;
+                            box-shadow:0 1px 3px rgba(0,0,0,0.04);'>
+                    <div style='font-size:0.7rem; font-weight:700; letter-spacing:0.09em;
+                                text-transform:uppercase; color:#6b7280; margin-bottom:6px;'>
+                        {'⭐ Avg rating' if avg_rating else '⭐ No ratings yet'}
+                    </div>
+                    <div style='font-size:1.6rem; font-weight:800; color:#047857; line-height:1;'>
+                        {f"{avg_rating:.2f}" if avg_rating else "—"}
+                    </div>
+                </div>
+                """
+            )
+            st.markdown(
+                f'<div style="display:flex; gap:12px; flex-wrap:wrap;">{kpi_cards}</div>',
+                unsafe_allow_html=True,
+            )
 
     except Exception as e:
         st.warning(f"Could not load producer's products: {e}")
