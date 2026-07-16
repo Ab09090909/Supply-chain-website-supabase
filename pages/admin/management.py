@@ -1420,3 +1420,31 @@ def _render_row_adder(table: str, sample_row: dict, admin: dict):
 
         submitted = st.form_submit_button("➕ Add Row", type="primary")
         if submitted:
+            try:
+                client = get_supabase_admin_client()
+                # Filter out empty strings
+                payload = {k: v for k, v in new_values.items() if v.strip()}
+                client.table(table).insert(payload).execute()
+                _log_admin_action(admin, "add_row", table, None, {"payload": payload})
+                st.success("Row added!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Insert failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Helper: log admin actions
+# ---------------------------------------------------------------------------
+def _log_admin_action(admin: dict, action: str, target_table: str, target_id: str = None, details: dict = None):
+    """Log an admin action to the audit trail."""
+    try:
+        client = get_supabase_admin_client()
+        client.table("admin_activity_logs").insert({
+            "admin_id": admin["id"],
+            "action": action,
+            "target_table": target_table,
+            "target_id": str(target_id) if target_id else None,
+            "details": details or {},
+        }).execute()
+    except Exception:
+        pass  # Logging is best-effort
