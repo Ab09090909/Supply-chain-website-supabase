@@ -1144,11 +1144,42 @@ def _render_database_management(admin: dict):
     # ---- Edit / Delete existing rows ----
     st.markdown("#### ✏️ Edit or Delete a Row")
     row_ids = [str(r.get("id", i)) for i, r in enumerate(rows)]
-    selected_row_idx = st.selectbox(
-        "Select a row to edit/delete",
-        range(len(rows)),
-        format_func=lambda i: f"Row {i+1}: {rows[i].get('id', '?')[:8]}...",
-    )
+
+    def _format_row(i: int) -> str:
+        """Build a human-readable label for a row in the dropdown."""
+        r = rows[i]
+        rid = str(r.get("id", "?"))[:8]
+
+        if table == "profiles":
+            email = r.get("email", "—")
+            name = r.get("full_name") or "—"
+            role = r.get("role", "—")
+            return f"👤 {name} · {email} · {role} · {rid}…"
+        if table == "products":
+            return f"📦 {r.get('name', '—')} · {r.get('sku', '—')} · {format_currency(r.get('price', 0))} · {rid}…"
+        if table == "orders":
+            return f"🛒 {r.get('order_number', '—')} · {r.get('status', '—')} · {format_currency(r.get('total', 0))} · {rid}…"
+        if table == "agreements":
+            return f"📄 {r.get('agreement_code', '—')} · {r.get('title', '—')[:40]} · {rid}…"
+        if table == "notifications":
+            return f"🔔 {r.get('title', '—')[:50]} · {r.get('type', '—')} · {rid}…"
+        if table == "verification_documents":
+            return f"📄 {r.get('document_type', '—')} · {r.get('status', '—')} · {rid}…"
+        # Default fallback
+        return f"Row {i+1}: {rid}…"
+
+    col_sel, col_action = st.columns([3, 1])
+    with col_sel:
+        selected_row_idx = st.selectbox(
+            "📋 Select a row to edit/delete",
+            range(len(rows)),
+            format_func=_format_row,
+            key=f"row_select_{table}",
+        )
+    with col_action:
+        st.markdown("<br/>", unsafe_allow_html=True)
+        if st.button("🔄 Refresh list", key=f"refresh_rows_{table}", use_container_width=True):
+            st.rerun()
 
     if selected_row_idx is not None:
         selected_row = rows[selected_row_idx]
@@ -1160,8 +1191,73 @@ def _render_database_management(admin: dict):
         _render_row_adder(table, rows[0] if rows else {}, admin)
 
 
+# ---- Field metadata for the row editor ----
+# Maps (table, column) -> input widget type and options. Falls back to
+# a text input for unknown fields.
+_FIELD_WIDGETS = {
+    # Profiles table — use dropdowns for enum-like fields
+    ("profiles", "role"): {
+        "type": "select",
+        "options": ["customer", "merchant", "producer", "admin"],
+    },
+    ("profiles", "is_active"): {"type": "bool"},
+    ("profiles", "is_verified"): {"type": "bool"},
+    ("profiles", "verification_status"): {
+        "type": "select",
+        "options": ["pending", "verified", "rejected"],
+    },
+    # Products table
+    ("products", "status"): {
+        "type": "select",
+        "options": ["active", "inactive", "draft"],
+    },
+    # Orders
+    ("orders", "status"): {
+        "type": "select",
+        "options": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"],
+    },
+    ("orders", "payment_status"): {
+        "type": "select",
+        "options": ["pending", "paid", "failed", "refunded"],
+    },
+    # Notifications
+    ("notifications", "type"): {
+        "type": "select",
+        "options": ["info", "success", "warning", "error"],
+    },
+    ("notifications", "is_read"): {"type": "bool"},
+    # Verification docs
+    ("verification_documents", "status"): {
+        "type": "select",
+        "options": ["pending", "approved", "rejected"],
+    },
+    # Agreements
+    ("agreements", "status"): {
+        "type": "select",
+        "options": ["draft", "pending", "active", "completed", "cancelled"],
+    },
+    # Fraud logs
+    ("fraud_logs", "status"): {
+        "type": "select",
+        "options": ["pending", "investigating", "resolved", "dismissed"],
+    },
+    ("fraud_logs", "severity"): {
+        "type": "select",
+        "options": ["low", "medium", "high", "critical"],
+    },
+    # AI predictions
+    ("ai_predictions", "model_version"): {"type": "text"},
+}
+
+
 def _render_row_editor(table: str, row: dict, admin: dict):
-    """Render an editor for a single row."""
+    """Render an editor for a single row.
+
+    Uses dropdowns (selectbox) for known enum-like fields, checkboxes
+    for booleans, and the right input type for dates / numbers / text.
+    For the profiles table, also adds a password reset field that uses
+    the Supabase Auth admin API to change the user's password.
+    """
     with st.form(f"edit_row_{table}_{row.get('id', 'new')}"):
         st.markdown(f"**Editing row** `{row.get('id', '?')}`")
         edited_values = {}
@@ -1169,15 +1265,89 @@ def _render_row_editor(table: str, row: dict, admin: dict):
             if col in ("id", "created_at", "updated_at"):
                 st.text_input(f"{col} (locked)", value=str(val) if val else "", disabled=True, key=f"edit_{col}")
                 continue
-            # Render appropriate input based on type
-            if isinstance(val, bool):
-                edited_values[col] = st.checkbox(col, value=val, key=f"edit_{col}")
-            elif isinstance(val, (int, float)) and not isinstance(val, bool):
-                edited_values[col] = st.number_input(col, value=val, key=f"edit_{col}")
-            elif val is None:
-                edited_values[col] = st.text_input(f"{col} (null)", value="", key=f"edit_{col}") or None
+            widget = _FIELD_WIDGETS.get((table, col))
+            if widget is None:
+                # Auto-detect from the column name
+                if col.startswith("is_") or col.startswith("has_") or col.endswith("_active") or col.endswith("_verified"):
+                    widget = {"type": "bool"}
+                elif col == "role":
+                    widget = {"type": "select", "options": ["customer", "merchant", "producer", "admin"]}
+                elif col == "status" or col.endswith("_status"):
+                    widget = {"type": "select", "options": ["pending", "active", "inactive", "completed", "cancelled", "rejected", "approved", "draft"]}
+                elif col.endswith("_at"):
+                    widget = {"type": "datetime"}
+                elif col.endswith("_date"):
+                    widget = {"type": "date"}
+                elif isinstance(val, bool):
+                    widget = {"type": "bool"}
+                elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                    widget = {"type": "number"}
+                elif val is None or isinstance(val, str):
+                    widget = {"type": "text"}
+                else:
+                    widget = {"type": "text"}
+
+            # Render the widget based on the type
+            if widget["type"] == "select":
+                options = widget["options"]
+                if val is not None and val not in options:
+                    options = [val] + list(options)  # preserve the current value
+                default_idx = options.index(val) if val in options else 0
+                edited_values[col] = st.selectbox(
+                    col, options=options, index=default_idx, key=f"edit_{col}",
+                )
+            elif widget["type"] == "bool":
+                edited_values[col] = st.checkbox(col, value=bool(val), key=f"edit_{col}")
+            elif widget["type"] == "number":
+                if isinstance(val, float) or (val is not None and "." in str(val)):
+                    edited_values[col] = st.number_input(col, value=float(val or 0.0), key=f"edit_{col}")
+                else:
+                    edited_values[col] = st.number_input(col, value=int(val or 0), key=f"edit_{col}")
+            elif widget["type"] == "date":
+                from datetime import date as _date
+                if val:
+                    try:
+                        d = _date.fromisoformat(str(val)[:10])
+                        edited_values[col] = st.date_input(col, value=d, key=f"edit_{col}")
+                    except Exception:
+                        edited_values[col] = st.text_input(col, value=str(val) or "", key=f"edit_{col}")
+                else:
+                    edited_values[col] = st.date_input(col, value=None, key=f"edit_{col}")
+            elif widget["type"] == "datetime":
+                if val:
+                    edited_values[col] = st.text_input(
+                        f"{col} (ISO timestamp)",
+                        value=str(val),
+                        key=f"edit_{col}",
+                        help="Format: 2026-07-16T14:30:00+00:00",
+                    )
+                else:
+                    edited_values[col] = st.text_input(col, value="", key=f"edit_{col}")
             else:
-                edited_values[col] = st.text_area(col, value=str(val), height=60, key=f"edit_{col}")
+                # text
+                if val is None:
+                    edited_values[col] = st.text_input(f"{col} (null)", value="", key=f"edit_{col}") or None
+                else:
+                    if len(str(val)) > 80:
+                        edited_values[col] = st.text_area(col, value=str(val), height=60, key=f"edit_{col}")
+                    else:
+                        edited_values[col] = st.text_input(col, value=str(val), key=f"edit_{col}")
+
+        # ---- PASSWORD RESET (profiles table only) ----
+        new_password = None
+        if table == "profiles":
+            st.markdown("---")
+            st.markdown("##### 🔐 Change Password")
+            st.caption(
+                "Optional. Leave blank to keep the current password. "
+                "Min 8 characters. The change uses the Supabase Auth admin API."
+            )
+            new_password = st.text_input(
+                "New password (leave blank to keep current)",
+                type="password",
+                key=f"edit_password_{row.get('id')}",
+                placeholder="Min 8 characters",
+            )
 
         col1, col2 = st.columns(2)
         with col1:
@@ -1190,12 +1360,43 @@ def _render_row_editor(table: str, row: dict, admin: dict):
                 client = get_supabase_admin_client()
                 # Filter out locked columns
                 update_payload = {k: v for k, v in edited_values.items() if k not in ("id", "created_at", "updated_at")}
+                # Convert date / datetime fields to strings
+                from datetime import date as _date, datetime as _datetime
+                for k, v in list(update_payload.items()):
+                    if isinstance(v, _date):
+                        update_payload[k] = v.isoformat()
+                    elif isinstance(v, _datetime):
+                        update_payload[k] = v.isoformat()
                 client.table(table).update(update_payload).eq("id", row["id"]).execute()
-                _log_admin_action(admin, "edit_row", table, str(row.get("id")), {"changes": update_payload})
-                st.success("Row updated!")
-                st.rerun()
+                _log_admin_action(admin, "edit_row", table, str(row.get("id")), {"changes": list(update_payload.keys())})
+                profile_updated = True
             except Exception as e:
                 st.error(f"Update failed: {e}")
+                profile_updated = False
+
+            # ---- Password reset (profiles only) ----
+            if profile_updated and table == "profiles" and new_password:
+                if len(new_password) < 8:
+                    st.warning("Password must be at least 8 characters — not changed.")
+                else:
+                    try:
+                        admin_client = get_supabase_admin_client()
+                        # Supabase-py exposes update_user_by_id on the admin client
+                        admin_client.auth.admin.update_user_by_id(
+                            row["id"],
+                            {"password": new_password},
+                        )
+                        _log_admin_action(
+                            admin, "reset_password", "auth.users", str(row.get("id")),
+                            {"by_admin": admin.get("id")},
+                        )
+                        st.success("✅ Profile saved and password updated.")
+                    except Exception as pw_err:
+                        st.error(f"Profile saved, but password change failed: {pw_err}")
+            elif profile_updated:
+                st.success("Row updated!")
+            if profile_updated:
+                st.rerun()
 
         if deleted:
             try:
