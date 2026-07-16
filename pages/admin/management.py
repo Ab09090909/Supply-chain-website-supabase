@@ -5,6 +5,10 @@ Three sub-tabs:
   A) 👥 User Management  — verify users, view uploaded documents, activate/deactivate, delete
   B) 📦 Product Management — view/remove/delete any posted product
   C) 🗄️ Database Management — view/edit/add/delete rows in any table
+
+The summary card on each tab uses the same green-gradient + metric-grid
+design as the admin dashboard's "Orders & Products" card for visual
+consistency across the admin section.
 """
 from __future__ import annotations
 
@@ -17,6 +21,11 @@ from database.connection import get_supabase_admin_client, get_supabase_client
 from utils.ui import page_header, role_badge
 from utils.helpers import format_currency, format_datetime
 from utils.db_health import is_table_available
+from pages.admin._card import (
+    inject_card_css,
+    admin_card as _card,
+    admin_metric_box as _metric_box,
+)
 
 
 def render_admin_management():
@@ -25,6 +34,9 @@ def render_admin_management():
     user = get_current_user()
     if not user:
         return
+
+    # Inject the card CSS once for the whole page (idempotent).
+    inject_card_css()
 
     sub1, sub2, sub3 = st.tabs([
         "👥 User Management",
@@ -44,9 +56,6 @@ def render_admin_management():
 # A) USER MANAGEMENT
 # ---------------------------------------------------------------------------
 def _render_user_management(admin: dict):
-    st.markdown("### 👥 User Management")
-    st.caption("Verify users, view their documents, activate/deactivate, or delete accounts.")
-
     try:
         client = get_supabase_admin_client()
     except Exception:
@@ -58,23 +67,31 @@ def _render_user_management(admin: dict):
         st.error(f"Failed to load users: {e}")
         return
 
-    # Summary
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Users", len(users))
-    with col2:
-        pending_verification = sum(1 for u in users if u.get("verification_status") == "pending")
-        st.metric("⏳ Pending Verification", pending_verification)
-    with col3:
-        verified = sum(1 for u in users if u.get("verification_status") == "verified")
-        st.metric("✅ Verified", verified)
-    with col4:
-        active = sum(1 for u in users if u.get("is_active"))
-        st.metric("🟢 Active", active)
+    # Summary card — same design as the dashboard's "Orders & Products"
+    pending_verification = sum(1 for u in users if u.get("verification_status") == "pending")
+    verified = sum(1 for u in users if u.get("verification_status") == "verified")
+    rejected = sum(1 for u in users if u.get("verification_status") == "rejected")
+    active = sum(1 for u in users if u.get("is_active"))
 
-    st.markdown("---")
+    _card(
+        icon="👥",
+        title="User Management",
+        subtitle="Verify users, view their documents, activate/deactivate, or delete accounts.",
+        metrics_html=(
+            _metric_box(str(len(users)), "Total Users", "👥")
+            + _metric_box(
+                str(pending_verification),
+                "Pending Verification",
+                "⏳",
+                alert=pending_verification > 0,
+            )
+            + _metric_box(str(verified), "Verified", "✅")
+            + _metric_box(str(rejected), "Rejected", "❌", alert=rejected > 0)
+            + _metric_box(str(active), "Active", "🟢")
+        ),
+    )
 
-    # Filter
+    # Filter row
     col1, col2 = st.columns(2)
     with col1:
         search = st.text_input("🔍 Search by name or email", placeholder="Search...")
@@ -417,9 +434,6 @@ def _delete_user(u: dict, admin: dict):
 # B) PRODUCT MANAGEMENT
 # ---------------------------------------------------------------------------
 def _render_product_management(admin: dict):
-    st.markdown("### 📦 Product Management")
-    st.caption("View, search, and remove any product posted on the platform.")
-
     try:
         client = get_supabase_admin_client()
     except Exception:
@@ -436,18 +450,29 @@ def _render_product_management(admin: dict):
         st.error(f"Failed to load products: {e}")
         return
 
-    # Summary
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Products", len(products))
-    with col2:
-        active = sum(1 for p in products if p.get("status") == "active")
-        st.metric("🟢 Active", active)
-    with col3:
-        low_stock = sum(1 for p in products if int(p.get("stock", 0)) <= int(p.get("reorder_point", 0)))
-        st.metric("⚠️ Low Stock", low_stock)
+    # Summary card — same design as the dashboard's "Orders & Products"
+    active = sum(1 for p in products if p.get("status") == "active")
+    inactive = sum(1 for p in products if p.get("status") == "inactive")
+    draft = sum(1 for p in products if p.get("status") == "draft")
+    low_stock = sum(
+        1 for p in products
+        if int(p.get("stock", 0)) <= int(p.get("reorder_point", 0))
+    )
+    out_of_stock = sum(1 for p in products if int(p.get("stock", 0)) == 0)
 
-    st.markdown("---")
+    _card(
+        icon="📦",
+        title="Product Management",
+        subtitle="View, search, and remove any product posted on the platform.",
+        metrics_html=(
+            _metric_box(str(len(products)), "Total Products", "📦")
+            + _metric_box(str(active), "Active", "🟢")
+            + _metric_box(str(inactive), "Inactive", "⚪", alert=inactive > 0)
+            + _metric_box(str(draft), "Draft", "📝", alert=draft > 0)
+            + _metric_box(str(low_stock), "Low Stock", "⚠️", alert=low_stock > 0)
+            + _metric_box(str(out_of_stock), "Out of Stock", "❌", alert=out_of_stock > 0)
+        ),
+    )
 
     # Filters
     col1, col2, col3 = st.columns(3)
@@ -584,9 +609,6 @@ HIDDEN_COLUMNS = {"metadata", "input_features", "transaction_data", "risk_factor
 
 
 def _render_database_management(admin: dict):
-    st.markdown("### 🗄️ Database Management")
-    st.caption("View, edit, add, and delete rows in any database table. Use with caution!")
-
     st.warning("⚠️ **Warning:** Direct database edits can break the app. Only modify data if you know what you're doing.")
 
     try:
@@ -626,15 +648,28 @@ def _render_database_management(admin: dict):
             st.error(f"Failed to load {table}: {e}")
             return
 
-    # Summary
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Rows in view", len(rows))
-    with col2:
-        is_editable = table in EDITABLE_TABLES
-        st.metric("Editable", "✅ Yes" if is_editable else "❌ Read-only")
-
-    st.markdown("---")
+    # Summary card — same design as the dashboard's "Orders & Products"
+    is_editable = table in EDITABLE_TABLES
+    _card(
+        icon="🗄️",
+        title="Database Management",
+        subtitle="View, edit, add, and delete rows in any database table. Use with caution!",
+        metrics_html=(
+            _metric_box(str(len(rows)), f"Rows in `{table}`", "📋")
+            + _metric_box(
+                str(len(MANAGED_TABLES)),
+                "Tables Available",
+                "🗂️",
+            )
+            + _metric_box(
+                "Yes" if is_editable else "No",
+                "Editable",
+                "✏️" if is_editable else "🔒",
+                alert=not is_editable,
+            )
+            + _metric_box(str(limit), "Row Limit", "📏")
+        ),
+    )
 
     if not rows:
         st.info(f"No rows in `{table}`.")
