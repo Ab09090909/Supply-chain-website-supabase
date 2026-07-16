@@ -373,10 +373,17 @@ class MLEngine:
 
         Silent on failure — logging is best-effort and must not break the
         caller's flow.
+
+        We look up the product's producer_id so the RLS policy
+        ``auth.uid() = producer_id`` on ai_prediction_log passes for
+        the engine's write (otherwise the policy silently rejects the
+        insert and every prediction is dropped).
         """
         try:
+            producer_id = self._producer_id_for_product(product_id)
             row = {
                 "product_id": product_id,
+                "producer_id": producer_id,
                 "prediction_type": prediction_type,
                 "predicted_value": float(predicted_value),
                 "horizon_days": horizon_days,
@@ -387,6 +394,21 @@ class MLEngine:
             self._write_client().table("ai_prediction_log").insert(row).execute()
         except Exception:
             pass
+
+    def _producer_id_for_product(self, product_id: str) -> Optional[str]:
+        """Look up the producer_id for a product, so engine writes satisfy
+        the RLS WITH CHECK on ai_prediction_log / ai_model_metrics.
+
+        Returns None if the product can't be found — the insert will then
+        be rejected by RLS, but it will fail with a clear log entry rather
+        than silently succeed with NULL producer_id (which would be a
+        data-integrity issue).
+        """
+        try:
+            r = self.client.table("products").select("producer_id").eq("id", product_id).maybe_single().execute()
+            return (r.data or {}).get("producer_id") if r else None
+        except Exception:
+            return None
 
     def backfill_actuals(self) -> Dict[str, int]:
         """Fill in actual_value for predictions whose truth has arrived.
@@ -555,6 +577,10 @@ class MLEngine:
                     bias = float(np.mean(err))
                 else:
                     bias = 0.0
+                # Insert with the canonical column name `computed_at` (matches
+                # the CREATE TABLE in migration_v6.sql). We also write
+                # `evaluated_at` as an alias for backward compatibility with
+                # older deployments that already have it as a column.
                 rows.append({
                     "product_id": pid,
                     "prediction_type": ptype,
@@ -562,22 +588,32 @@ class MLEngine:
                     "mape": mape,
                     "rmse": rmse,
                     "samples": int(len(group)),
+                    "sample_size": int(len(group)),
                     "bias": bias,
+                    "computed_at": now_iso,
                     "evaluated_at": now_iso,
+                    "model_name": MODEL_VERSION,
+                    "model_version": MODEL_VERSION,
                 })
 
             if rows:
                 client = self._write_client()
                 # Insert new metric rows. Old ones are kept for history
-                # (the unique constraint is on product+type+evaluated_at,
-                # which never collides because evaluated_at is now_iso).
+                # (the unique constraint is on product+type+computed_at,
+                # which never collides because computed_at is now_iso).
                 client.table("ai_model_metrics").insert(rows).execute()
             return len(rows)
         except Exception:
             return 0
 
     def _latest_metrics(self, metrics_df) -> Dict[Tuple[str, str], Dict[str, Any]]:
-        """Index the latest metric row per (product_id, prediction_type)."""
+        """Index the latest metric row per (product_id, prediction_type).
+
+        The canonical timestamp column is ``computed_at`` (matches the
+        CREATE TABLE in migration_v6.sql). For backward compatibility
+        with deployments that have an older ``evaluated_at`` column, we
+        try that first.
+        """
         out: Dict[Tuple[str, str], Dict[str, Any]] = {}
         if metrics_df is None:
             return out
@@ -591,8 +627,12 @@ class MLEngine:
                 return out
             df = metrics_df.copy()
             df["product_id"] = df["product_id"].astype(str)
-            df["evaluated_at"] = pd.to_datetime(df["evaluated_at"], errors="coerce")
-            df = df.sort_values("evaluated_at")
+            # Pick the timestamp column we have (computed_at first, then
+            # the legacy evaluated_at)
+            ts_col = "computed_at" if "computed_at" in df.columns else "evaluated_at" if "evaluated_at" in df.columns else None
+            if ts_col is not None:
+                df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+                df = df.sort_values(ts_col)
             for (pid, ptype), g in df.groupby(["product_id", "prediction_type"]):
                 last = g.iloc[-1].to_dict()
                 out[(pid, ptype)] = last
@@ -663,7 +703,14 @@ def get_training_summary() -> Dict[str, Any]:
     if metrics_df is None:
         metrics_df = pd.DataFrame()
     if not metrics_df.empty:
-        latest = metrics_df.sort_values("evaluated_at").groupby(["product_id", "prediction_type"]).tail(1)
+        # Pick the timestamp column we have (computed_at first, then the
+        # legacy evaluated_at) — older deployments may not have the new
+        # canonical column yet.
+        ts_col = "computed_at" if "computed_at" in metrics_df.columns else "evaluated_at" if "evaluated_at" in metrics_df.columns else None
+        if ts_col is not None:
+            latest = metrics_df.sort_values(ts_col).groupby(["product_id", "prediction_type"]).tail(1)
+        else:
+            latest = metrics_df.groupby(["product_id", "prediction_type"]).tail(1)
         # Only include rows that met the minimum sample size — otherwise
         # the headline "accuracy" reflects single lucky predictions and is
         # misleading. ``MIN_SAMPLES_FOR_ACCURACY`` is the same threshold
