@@ -1141,8 +1141,7 @@ def _render_database_management(admin: dict):
         st.info("This table is read-only for safety. Use the dedicated management pages (User Management, Product Management) to modify it.")
         return
 
-    # ---- Edit / Delete existing rows ----
-    st.markdown("#### ✏️ Edit or Delete a Row")
+    # ---- Edit / Delete existing rows (wrapped in a dropdown expander) ----
     row_ids = [str(r.get("id", i)) for i, r in enumerate(rows)]
 
     def _format_row(i: int) -> str:
@@ -1168,26 +1167,26 @@ def _render_database_management(admin: dict):
         # Default fallback
         return f"Row {i+1}: {rid}…"
 
-    col_sel, col_action = st.columns([3, 1])
-    with col_sel:
-        selected_row_idx = st.selectbox(
-            "📋 Select a row to edit/delete",
-            range(len(rows)),
-            format_func=_format_row,
-            key=f"row_select_{table}",
-        )
-    with col_action:
-        st.markdown("<br/>", unsafe_allow_html=True)
-        if st.button("🔄 Refresh list", key=f"refresh_rows_{table}", use_container_width=True):
-            st.rerun()
+    with st.expander(f"✏️ Edit or Delete a Row in `{table}`", expanded=False):
+        col_sel, col_action = st.columns([3, 1])
+        with col_sel:
+            selected_row_idx = st.selectbox(
+                "📋 Select a row to edit/delete",
+                range(len(rows)),
+                format_func=_format_row,
+                key=f"row_select_{table}",
+            )
+        with col_action:
+            st.markdown("<br/>", unsafe_allow_html=True)
+            if st.button("🔄 Refresh list", key=f"refresh_rows_{table}", use_container_width=True):
+                st.rerun()
 
-    if selected_row_idx is not None:
-        selected_row = rows[selected_row_idx]
-        _render_row_editor(table, selected_row, admin)
+        if selected_row_idx is not None:
+            selected_row = rows[selected_row_idx]
+            _render_row_editor(table, selected_row, admin)
 
-    # ---- Add new row ----
-    st.markdown("#### ➕ Add New Row")
-    with st.expander("Add a new row to " + table, expanded=False):
+    # ---- Add new row (also in a dropdown expander) ----
+    with st.expander(f"➕ Add a New Row to `{table}`", expanded=False):
         _render_row_adder(table, rows[0] if rows else {}, admin)
 
 
@@ -1421,31 +1420,3 @@ def _render_row_adder(table: str, sample_row: dict, admin: dict):
 
         submitted = st.form_submit_button("➕ Add Row", type="primary")
         if submitted:
-            try:
-                client = get_supabase_admin_client()
-                # Filter out empty strings
-                payload = {k: v for k, v in new_values.items() if v.strip()}
-                client.table(table).insert(payload).execute()
-                _log_admin_action(admin, "add_row", table, None, {"payload": payload})
-                st.success("Row added!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Insert failed: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Helper: log admin actions
-# ---------------------------------------------------------------------------
-def _log_admin_action(admin: dict, action: str, target_table: str, target_id: str = None, details: dict = None):
-    """Log an admin action to the audit trail."""
-    try:
-        client = get_supabase_admin_client()
-        client.table("admin_activity_logs").insert({
-            "admin_id": admin["id"],
-            "action": action,
-            "target_table": target_table,
-            "target_id": str(target_id) if target_id else None,
-            "details": details or {},
-        }).execute()
-    except Exception:
-        pass  # Logging is best-effort
