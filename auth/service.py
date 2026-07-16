@@ -150,10 +150,18 @@ def sign_up(
             profile_data,
             refresh_token=response.session.refresh_token,
         )
-        # Mark this session as needing verification. The app will
-        # show the verification prompt on every page until the user
-        # completes verification (or an admin approves their docs).
-        st.session_state["must_verify"] = True
+        # Mark this session as needing verification (unless the new
+        # user is an admin — admins never need to verify). The app
+        # will show the verification prompt on every page until the
+        # user completes verification (or an admin approves their docs).
+        try:
+            user_role = (profile_data.get("role") or "").lower()
+            if user_role == "admin":
+                st.session_state.pop("must_verify", None)
+            else:
+                st.session_state["must_verify"] = True
+        except Exception:
+            st.session_state["must_verify"] = True
         return True, "Signup successful."
     except Exception as e:
         msg = str(e)
@@ -209,12 +217,21 @@ def sign_in(email: str, password: str) -> Tuple[bool, str]:
         # If the user logged in but is not yet verified, mark the
         # session as "must verify" so the app shows the verification
         # prompt on every page.
+        #
+        # Admins are NEVER required to verify, so we never set
+        # must_verify for them (this would trap admins in a redirect
+        # loop where the admin profile doesn't show a verification
+        # form to clear the flag).
         try:
-            vstatus = profile_data.get("verification_status")
-            if vstatus in (None, "pending", "rejected"):
-                st.session_state["must_verify"] = True
-            else:
+            user_role = (profile_data.get("role") or "").lower()
+            if user_role == "admin":
                 st.session_state.pop("must_verify", None)
+            else:
+                vstatus = profile_data.get("verification_status")
+                if vstatus in (None, "pending", "rejected"):
+                    st.session_state["must_verify"] = True
+                else:
+                    st.session_state.pop("must_verify", None)
         except Exception:
             pass
         return True, "Login successful."
