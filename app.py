@@ -642,3 +642,29 @@ def main():
             </style>""",
             unsafe_allow_html=True,
         )
+        render_auth_page()
+        return
+
+    # Logged in → show sidebar + role content
+    # If the last Supabase call returned a 401 with "JWT expired", show
+    # a one-time banner that tells the user to log in again, and clear
+    # the session so they're forced to the login page on next rerun.
+    from auth.session import has_expired_jwt_error, clear_jwt_expired, clear_session
+    if has_expired_jwt_error():
+        st.warning(
+            "🔒 **Your session has expired.** Please log in again to continue. "
+            "Anything you didn't save will be lost."
+        )
+        # Don't clear the session immediately — let the user see the
+        # warning, click the logout button, and explicitly leave.
+        # Just clear the expired flag so the banner doesn't repeat.
+        clear_jwt_expired()
+
+    choice = render_sidebar()
+    if choice and choice != "marketplace":
+        st.session_state.pop("view_product_id", None)
+    render_role_content(choice)
+
+
+if __name__ == "__main__":
+    main()
