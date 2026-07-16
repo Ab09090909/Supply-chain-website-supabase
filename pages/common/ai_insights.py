@@ -24,7 +24,7 @@ import streamlit as st
 import pandas as pd
 
 from auth.session import get_current_user, get_current_role
-from utils.ui import page_header, metric_card
+from utils.ui import page_header
 from utils.helpers import format_currency
 from ai.engine import get_training_summary, MLEngine
 from ai.price_prediction import predict_optimal_prices, save_price_predictions_to_supabase
@@ -47,7 +47,133 @@ from ai.recommendations import get_recommendations
 # This function is exported so the admin dashboard can render the same
 # panel without code duplication. It is ALSO used here, but ONLY when
 # the current user is an admin — non-admins never see this content.
+#
+# Design: matches the admin dashboard's existing dash-card pattern
+# (green-gradient header + grid of metric-box children) for visual
+# consistency. The CSS is embedded in the function output so the panel
+# is self-contained — it renders correctly on any page without the
+# caller having to define a CARD_CSS variable.
 # ----------------------------------------------------------------------------
+
+# Card CSS — same design tokens as pages/admin/dashboard.py, but scoped
+# to a unique class prefix so it doesn't clash with the admin dashboard's
+# own CSS if both are loaded on the same page.
+_MODEL_STATUS_CSS = """
+<style>
+.ais-card {
+    background: #ffffff;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+}
+.ais-card-header {
+    background: linear-gradient(135deg, #1a5c2e 0%, #2d8a4e 100%);
+    padding: 20px 24px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.ais-card-header-icon {
+    font-size: 2rem;
+    line-height: 1;
+}
+.ais-card-header-text h3 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+.ais-card-header-text p {
+    margin: 2px 0 0;
+    color: #a8d5b5;
+    font-size: 0.82rem;
+}
+.ais-card-body {
+    padding: 18px 20px;
+}
+.ais-metric-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.ais-metric-box {
+    flex: 1 1 130px;
+    background: #f7f9f7;
+    border: 1px solid #e4ece6;
+    border-radius: 12px;
+    padding: 14px 16px;
+    text-align: center;
+    min-width: 110px;
+}
+.ais-metric-box .ais-metric-value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #1a5c2e;
+    line-height: 1.1;
+}
+.ais-metric-box .ais-metric-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b8f72;
+    margin-top: 4px;
+}
+.ais-metric-box .ais-metric-label-icon {
+    margin-right: 4px;
+}
+.ais-metric-box.alert .ais-metric-value { color: #b85c00; }
+.ais-metric-box.alert { background: #fff8f0; border-color: #f5d5b0; }
+.ais-metric-box.amber .ais-metric-value { color: #b85c00; }
+.ais-metric-box.amber { background: #fff8f0; border-color: #f5d5b0; }
+.ais-metric-box.success .ais-metric-value { color: #1a5c2e; }
+</style>
+"""
+
+
+def _ais_metric_box(value: str, label: str, icon: str = "", state: str = "") -> str:
+    """Render one metric box. `state` ∈ {'', 'alert', 'amber', 'success'}.
+
+    Internal helper for render_model_status_panel. Kept private (leading
+    underscore) because it produces a class-prefixed HTML string that
+    only makes sense in the context of _MODEL_STATUS_CSS.
+    """
+    cls = f"ais-metric-box {state}".strip() if state else "ais-metric-box"
+    icon_html = f'<span class="ais-metric-label-icon">{icon}</span>' if icon else ""
+    return (
+        f'<div class="{cls}">'
+        f'  <div class="ais-metric-value">{value}</div>'
+        f'  <div class="ais-metric-label">{icon_html}{label}</div>'
+        f'</div>'
+    )
+
+
+def _ais_card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
+    """Render a single card. Same pattern as admin/dashboard.py's _card()
+    but with the .ais- class prefix to avoid CSS collisions."""
+    st.markdown(
+        f"""
+        <div class="ais-card">
+          <div class="ais-card-header">
+            <div class="ais-card-header-icon">{icon}</div>
+            <div class="ais-card-header-text">
+              <h3>{title}</h3>
+              <p>{subtitle}</p>
+            </div>
+          </div>
+          <div class="ais-card-body">
+            <div class="ais-metric-grid">
+              {metrics_html}
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_model_status_panel(summary: dict | None = None) -> None:
     """Render the full Model Status + Self-Learning Loop section.
 
@@ -55,6 +181,12 @@ def render_model_status_panel(summary: dict | None = None) -> None:
       • admin/dashboard.py (the only role that should see it by default)
       • ai_insights.py, but ONLY when get_current_role() == "admin"
         (so an admin browsing the AI Insights page still sees the panel)
+
+    Visual design: matches the rest of the admin dashboard — two green
+    header cards (Model Status + Self-Learning Loop) each containing a
+    flex-wrap grid of metric boxes. The "needs data" / "no data" cells
+    are highlighted in amber so the admin can spot training gaps at a
+    glance. The CSS is embedded so the function is self-contained.
     """
     if summary is None:
         try:
@@ -63,51 +195,85 @@ def render_model_status_panel(summary: dict | None = None) -> None:
             st.error(f"Failed to load AI engine: {e}")
             return
 
-    st.markdown("##### 🧠 Model Status")
+    # Inject the card CSS once per render. Browser idempotent: redefining
+    # the same <style> block on a rerun is a no-op.
+    st.markdown(_MODEL_STATUS_CSS, unsafe_allow_html=True)
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        metric_card("Training Samples", f"{summary['orders_count']} orders / {summary['order_items_count']} items")
-    with col2:
-        metric_card("Products Trained", str(summary["products_count"]))
-    with col3:
-        metric_card("Demand Models", str(summary["demand_models_trained"]))
-    with col4:
-        r2 = summary.get("price_model_r2", 0)
-        metric_card(
+    # ── Card 1: Model Status (5 metrics) ────────────────────────────────────
+    model_metrics_html = (
+        _ais_metric_box(
+            f"{summary['orders_count']} orders / {summary['order_items_count']} items",
+            "Training Samples",
+            "📊",
+        )
+        + _ais_metric_box(
+            str(summary["products_count"]),
+            "Products Trained",
+            "📦",
+        )
+        + _ais_metric_box(
+            str(summary["demand_models_trained"]),
+            "Demand Models",
+            "📈",
+            state="alert" if summary["demand_models_trained"] == 0 else "success",
+        )
+        + _ais_metric_box(
+            f"{summary.get('price_model_r2', 0):.2f}",
             "Price Model R²",
-            f"{r2:.2f}",
-            delta="✅ trained" if summary.get("price_model_trained") else "❌ no data",
+            "💰",
+            state="amber" if not summary.get("price_model_trained") else "success",
         )
-    with col5:
-        metric_card(
-            "Recommender",
+        + _ais_metric_box(
             f"{summary.get('recommender_interactions', 0)} interactions",
-            delta="✅ ready" if summary.get("recommender_trained") else "⚠️ needs data",
+            "Recommender",
+            "🎯",
+            state="amber" if not summary.get("recommender_trained") else "success",
         )
+    )
+    _ais_card(
+        icon="🧠",
+        title="Model Status",
+        subtitle="How many models are trained and on how much data",
+        metrics_html=model_metrics_html,
+    )
 
-    # ---- Self-learning loop status ----
-    st.markdown("##### 🔁 Self-Learning Loop")
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1:
-        metric_card("Predictions Logged", str(summary.get("total_predictions_logged", 0)))
-    with sc2:
-        metric_card("Scored vs Actuals", str(summary.get("scored_predictions", 0)))
-    with sc3:
-        demand_acc = summary.get("demand_accuracy_pct")
-        metric_card(
-            "Demand Accuracy",
+    # ── Card 2: Self-Learning Loop (4 metrics) ──────────────────────────────
+    scored = summary.get("scored_predictions", 0) or 0
+    demand_acc = summary.get("demand_accuracy_pct")
+    price_acc = summary.get("price_accuracy_pct")
+    loop_metrics_html = (
+        _ais_metric_box(
+            str(summary.get("total_predictions_logged", 0)),
+            "Predictions Logged",
+            "📝",
+        )
+        + _ais_metric_box(
+            str(scored),
+            "Scored vs Actuals",
+            "✅",
+            state="amber" if scored == 0 else "success",
+        )
+        + _ais_metric_box(
             f"{demand_acc:.1f}%" if isinstance(demand_acc, (int, float)) else "—",
-            delta="📈 learning" if summary.get("scored_predictions", 0) > 0 else "⏳ needs scored data",
+            "Demand Accuracy",
+            "📈",
+            state="amber" if not isinstance(demand_acc, (int, float)) else "success",
         )
-    with sc4:
-        price_acc = summary.get("price_accuracy_pct")
-        metric_card(
-            "Price Accuracy",
+        + _ais_metric_box(
             f"{price_acc:.1f}%" if isinstance(price_acc, (int, float)) else "—",
-            delta="📈 learning" if summary.get("scored_predictions", 0) > 0 else "⏳ needs scored data",
+            "Price Accuracy",
+            "💰",
+            state="amber" if not isinstance(price_acc, (int, float)) else "success",
         )
+    )
+    _ais_card(
+        icon="🔁",
+        title="Self-Learning Loop",
+        subtitle="How many predictions have been scored against real outcomes",
+        metrics_html=loop_metrics_html,
+    )
 
+    # ── Caption with timestamps (small, below the cards) ────────────────────
     st.caption(
         "🔄 Models auto-retrain every 5 minutes. Every prediction is logged to "
         "`ai_prediction_log`, and once the truth arrives (an order is placed or a "
@@ -116,7 +282,6 @@ def render_model_status_panel(summary: dict | None = None) -> None:
         f"Last trained: {summary.get('last_trained', 'unknown')[:19]} · "
         f"Model version: {summary.get('model_version', 'unknown')}"
     )
-    st.markdown("---")
 
 
 def render_ai_insights():
