@@ -506,9 +506,14 @@ def render_role_content(choice: str | None):
             return
 
         if choice == "assistant":
-            from pages.common.ai_assistant import render_ai_assistant
-            render_ai_assistant()
-            return
+            # The AI Assistant now lives in a floating bubble that's
+            # always available. When the user clicks "AI Assistant" in
+            # the nav, we just auto-open the floating panel and bounce
+            # them back to their dashboard.
+            st.session_state["floating_chat_open"] = True
+            st.session_state["force_nav"] = "dashboard"
+            st.toast("💬 AI Assistant opened! Look at the bottom-right corner.", icon="🤖")
+            st.rerun()
 
         if choice == "notifications":
             from pages.common.notifications import render_notifications
@@ -692,6 +697,17 @@ def main():
     if choice and choice != "marketplace":
         st.session_state.pop("view_product_id", None)
     render_role_content(choice)
+
+    # Floating AI Assistant — renders a chat-bubble button in the
+    # bottom-right corner on every page. Call AFTER render_role_content
+    # so it sits on top of whatever page the user is on.
+    try:
+        from utils.floating_assistant import render_floating_assistant
+        render_floating_assistant()
+    except Exception:
+        # If anything goes wrong, the assistant just doesn't appear —
+        # the rest of the app keeps working normally.
+        pass
 
 
 if __name__ == "__main__":
