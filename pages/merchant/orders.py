@@ -8,6 +8,7 @@ from database.connection import get_supabase_client
 from utils.ui import page_header
 from utils.helpers import format_currency, format_datetime
 from utils.tracking import get_tracking, get_timeline
+from utils.reviews_ui import render_order_rating_widget
 
 
 def render_merchant_orders():
@@ -33,6 +34,28 @@ def render_merchant_orders():
     if not orders:
         st.info("You haven't placed any orders yet.")
         return
+
+    # Pre-fetch the product info once so each order's rating widget can
+    # show the product name + image without N extra queries per order.
+    product_ids = list({
+        it.get("product_id")
+        for o in orders
+        for it in (o.get("order_items") or [])
+        if it.get("product_id")
+    })
+    product_map: dict = {}
+    if product_ids:
+        try:
+            prods = (
+                client.table("products")
+                .select("id, name, sku, image_url, avg_rating, review_count")
+                .in_("id", product_ids)
+                .execute()
+            ).data or []
+            for p in prods:
+                product_map[p["id"]] = p
+        except Exception:
+            pass
 
     for o in orders:
         # Status colors
@@ -113,3 +136,18 @@ def render_merchant_orders():
                                 f"  <small style='color:#64748b;'>{ts} · by {actor}</small>",
                                 unsafe_allow_html=True,
                             )
+
+            # Once the order is delivered, merchants can also rate the
+            # products they bought (verified-buyer review, same as customers).
+            if status == "delivered":
+                with st.expander(
+                    f"⭐ Rate products in this order ({len(items)})",
+                    expanded=False,
+                ):
+                    st.caption(
+                        "Your rating is linked to this order so the producer "
+                        "knows it's from a verified merchant customer."
+                    )
+                    for it in items:
+                        product = product_map.get(it.get("product_id")) if it.get("product_id") else None
+                        render_order_rating_widget(o, it, product, user)
