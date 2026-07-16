@@ -442,12 +442,24 @@ def render_producer_inventory():
 
         with col_img:
             if p.get("image_url"):
-                try:
-                    st.image(p["image_url"], width=76)
-                except Exception:
-                    st.html('<div class="pi-img-placeholder">📦</div>')
+                st.html(f"""
+                <div style='width:76px; height:76px; border-radius:12px; overflow:hidden;
+                            box-shadow:0 4px 12px rgba(0,0,0,0.1); border:2px solid #e5e7eb;
+                            transition: transform 0.25s ease, box-shadow 0.25s ease;
+                            animation: scaleIn 0.4s ease-out;'
+                     onmouseover="this.style.transform='scale(1.05) rotate(-2deg)';this.style.boxShadow='0 8px 20px rgba(16,185,129,0.3)';"
+                     onmouseout="this.style.transform='scale(1) rotate(0)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)';">
+                  <img src='{p['image_url']}' style='width:100%; height:100%; object-fit:cover; display:block;' />
+                </div>
+                """)
             else:
-                st.html('<div class="pi-img-placeholder">📦</div>')
+                st.html("""
+                <div class="pi-img-placeholder"
+                     style='background:linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 50%, #34d399 100%);
+                            background-size:200% 200%; animation: gradientShift 6s ease infinite;'>
+                    📦
+                </div>
+                """)
 
         with col_info:
             desc = p.get("description") or "No description provided."
@@ -466,15 +478,21 @@ def render_producer_inventory():
         with col_stats:
             st.html(f"""
             <div style="display:flex;gap:10px;padding-top:6px;flex-wrap:wrap;align-items:center;">
-              <div class="pi-stat-pill">
-                <span class="val">{format_currency(p['price'])}</span>
+              <div class="pi-stat-pill" style="transition:transform 0.2s ease;"
+                   onmouseover="this.style.transform='translateY(-2px)';"
+                   onmouseout="this.style.transform='translateY(0)';">
+                <span class="val" style="background:linear-gradient(135deg, #047857 0%, #10b981 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{format_currency(p['price'])}</span>
                 <span class="lbl">Price</span>
               </div>
-              <div class="pi-stat-pill">
+              <div class="pi-stat-pill" style="transition:transform 0.2s ease;"
+                   onmouseover="this.style.transform='translateY(-2px)';"
+                   onmouseout="this.style.transform='translateY(0)';">
                 <span class="val">{p['stock']}</span>
                 <span class="lbl">Stock</span>
               </div>
-              <div class="pi-stat-pill">
+              <div class="pi-stat-pill" style="transition:transform 0.2s ease;"
+                   onmouseover="this.style.transform='translateY(-2px)';"
+                   onmouseout="this.style.transform='translateY(0)';">
                 <span class="val">{p['reorder_point']}</span>
                 <span class="lbl">Reorder at</span>
               </div>
