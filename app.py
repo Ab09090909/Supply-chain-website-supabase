@@ -467,11 +467,21 @@ def render_role_content(choice: str | None):
                 st.rerun()
             st.markdown("---")
 
-        # NEW: If user just signed up AND the dashboard is the default page,
+        # If user just signed up AND the dashboard is the default page,
         # auto-route them to the profile (where the verification form lives).
         # This is the bulletproof fix: even if force_nav didn't take, we
         # check the must_verify flag here.
-        if st.session_state.get("must_verify") and choice == "dashboard":
+        #
+        # IMPORTANT: only do this for non-admin users. Admins don't need
+        # to verify, and forcing them to the profile page would trap them
+        # there (the admin profile doesn't show a verification form, so
+        # the must_verify flag would never get cleared, and they'd be
+        # stuck in a redirect loop).
+        if (
+            st.session_state.get("must_verify")
+            and choice == "dashboard"
+            and role != "admin"
+        ):
             st.session_state["force_nav"] = "profile"
             st.rerun()
 
@@ -623,6 +633,17 @@ def main():
         st.session_state["access_token"] = None
     if "user" not in st.session_state:
         st.session_state["user"] = None
+
+    # Safety net: if the user is an admin, they should never have the
+    # must_verify flag set (admins don't need to verify). This handles
+    # the case where a session was created before this fix was deployed
+    # and the flag is stuck on.
+    try:
+        user_obj = st.session_state.get("user") or {}
+        if (user_obj.get("role") or "").lower() == "admin":
+            st.session_state.pop("must_verify", None)
+    except Exception:
+        pass
 
     try:
         init_theme()
