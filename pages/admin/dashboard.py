@@ -38,7 +38,8 @@ def _metric_box(value: str, label: str, icon: str = "", alert: bool = False) -> 
 
 
 def _card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
-    st.markdown(
+    from utils.ui import _html
+    _html(
         f"""
         <div class="dash-card">
           <div class="dash-card-header">
@@ -54,16 +55,82 @@ def _card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
             </div>
           </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_admin_dashboard():
-    st.title("🛡️ Admin Dashboard")
-    st.caption("Platform-wide overview and system health")
+    # Animated welcome banner (admin) — same gradient style as the other
+    # role dashboards, just with an admin-themed emoji.
+    user = get_current_user()
+    name = user.get("full_name", "Admin") if user else "Admin"
+
+    from datetime import datetime
+    hour = datetime.now().hour
+    if hour < 12:
+        greeting, emoji = "Good morning", "☀️"
+    elif hour < 18:
+        greeting, emoji = "Good afternoon", "🌤️"
+    else:
+        greeting, emoji = "Good evening", "🌙"
+
+    from utils.ui import _html
+    _html(f"""
+    <div style='
+        background: linear-gradient(135deg, #0f3d23 0%, #1a5c2e 35%, #2d8a4e 70%, #34d399 100%);
+        background-size: 200% 200%;
+        animation: gradientShift 8s ease infinite;
+        border-radius: 18px;
+        padding: 28px 32px;
+        margin-bottom: 24px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(16, 185, 129, 0.2);
+    '>
+      <div style='
+        position: absolute; top: -40px; right: -20px;
+        width: 220px; height: 220px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+        animation: float 5s ease-in-out infinite;
+      '></div>
+      <div style='
+        position: absolute; bottom: -30px; left: 30%;
+        width: 140px; height: 140px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(110, 231, 183, 0.18) 0%, transparent 70%);
+        animation: float 7s ease-in-out infinite reverse;
+      '></div>
+      <div style='position: relative; z-index: 1;'>
+        <div style='
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(8px);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: #d1fae5;
+            font-weight: 600;
+            margin-bottom: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        '>{emoji} {greeting}</div>
+        <h1 style='
+            color: #ffffff;
+            font-size: 1.85rem;
+            font-weight: 800;
+            margin: 0 0 4px 0;
+            letter-spacing: -0.02em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        '>🛡️ Welcome back, {name}!</h1>
+        <p style='
+            color: #d1fae5;
+            font-size: 0.9rem;
+            margin: 0;
+            font-weight: 500;
+        '>Platform-wide overview and system health</p>
+      </div>
+    </div>
+    """)
 
     inject_card_css()
 
