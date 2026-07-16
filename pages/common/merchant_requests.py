@@ -171,6 +171,10 @@ def _render_request_card(req: dict, merchant: dict):
             </div>
             """, unsafe_allow_html=True)
 
+        # --- Details button (show producer profile + their products) ---
+        with st.expander("🔍 Details — Producer Profile & Products", expanded=False):
+            _render_producer_details(req, producer)
+
         # --- Actions ---
         if req["status"] == "pending":
             col_a, col_b = st.columns(2)
@@ -267,3 +271,203 @@ def _cancel_request(req: dict, merchant: dict):
         st.rerun()
     except Exception as e:
         st.error(f"Failed to decline: {e}")
+
+
+def _render_producer_details(req: dict, producer: dict):
+    """Show the producer's full profile + their products.
+
+    This gives the merchant all the context they need to decide whether
+    to confirm the agreement: who the producer is, what they sell,
+    how much stock they have, and how they've been rated.
+    """
+    producer_id = req.get("producer_id")
+    if not producer_id:
+        st.info("Producer info unavailable.")
+        return
+
+    # ---- Producer business card ----
+    st.markdown("#### 👤 Producer Business Card")
+
+    avatar = producer.get("avatar_url")
+    if avatar:
+        avatar_html = (
+            f"<img src='{avatar}' style='width:64px; height:64px; border-radius:50%; "
+            f"object-fit:cover; border:3px solid #10b981;' />"
+        )
+    else:
+        initials = "".join(
+            p[0].upper() for p in (producer.get("full_name") or "??").split()[:2]
+        )
+        avatar_html = (
+            f"<div style='width:64px; height:64px; border-radius:50%; "
+            f"background:linear-gradient(135deg,#10b981 0%,#059669 100%); "
+            f"display:flex; align-items:center; justify-content:center; "
+            f"color:#fff; font-weight:700; font-size:1.4rem;'>{initials}</div>"
+        )
+
+    is_verified = "✅ Verified" if producer.get("is_verified") else "❌ Not verified"
+
+    st.markdown(
+        f"""
+        <div style='padding:1.25rem; border-radius:12px; background:#f8fafc;
+                    border-left:4px solid #10b981; border:1px solid #e2e8f0;
+                    margin-bottom:1rem;'>
+            <div style='display:flex; align-items:center; gap:1rem;'>
+                {avatar_html}
+                <div style='flex:1;'>
+                    <div style='font-size:1.2rem; font-weight:700; color:#0f172a;'>
+                        {producer.get('full_name', 'Unknown Producer')}
+                    </div>
+                    <div style='color:#64748b; font-size:0.9rem; margin-top:0.15rem;'>
+                        {producer.get('company') or 'Independent Producer'}
+                    </div>
+                    <div style='margin-top:0.4rem; color:#10b981; font-weight:600; font-size:0.85rem;'>
+                        {is_verified}
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Contact + business details grid
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**📧 Contact Information**")
+        st.markdown(f"• Email: `{producer.get('email', '—')}`")
+        st.markdown(f"• Phone: {producer.get('phone', '—') or '—'}")
+        st.markdown(f"• Location: {producer.get('location', '—') or '—'}")
+    with c2:
+        st.markdown("**📊 Business Information**")
+        joined = producer.get("created_at", "")
+        joined_str = format_datetime(joined, "%Y-%m-%d") if joined else "—"
+        st.markdown(f"• Member since: {joined_str}")
+        is_active = "✅ Active" if producer.get("is_active", True) else "❌ Inactive"
+        st.markdown(f"• Status: {is_active}")
+
+    # ---- Producer's products ----
+    st.markdown("---")
+    st.markdown("#### 🛒 Producer's Products")
+    try:
+        client = get_supabase_client()
+        products = (
+            client.table("products")
+            .select("id, name, sku, category, price, stock, unit, status, image_url, "
+                    "quality_grade, brand, origin, avg_rating, review_count")
+            .eq("producer_id", producer_id)
+            .eq("status", "active")
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        ).data or []
+
+        if not products:
+            st.info("This producer has no active products yet.")
+        else:
+            st.caption(f"Showing {len(products)} active product(s)")
+
+            # Build product cards
+            for p in products:
+                _render_product_card_in_details(p)
+
+            # Aggregate stats
+            total_stock = sum(int(p.get("stock", 0) or 0) for p in products)
+            total_value = sum(
+                float(p.get("price", 0) or 0) * int(p.get("stock", 0) or 0)
+                for p in products
+            )
+            avg_rating = (
+                sum(float(p.get("avg_rating", 0) or 0) for p in products if p.get("avg_rating"))
+                / max(sum(1 for p in products if p.get("avg_rating")), 1)
+            )
+
+            st.markdown("---")
+            st.markdown("**📊 Portfolio Summary**")
+            sm1, sm2, sm3, sm4 = st.columns(4)
+            with sm1:
+                st.metric("🛒 Active products", len(products))
+            with sm2:
+                st.metric("📦 Total stock", f"{total_stock:,}")
+            with sm3:
+                st.metric("💰 Inventory value", format_currency(total_value))
+            with sm4:
+                st.metric(f"{'⭐ Avg rating' if avg_rating else '⭐ No ratings yet'}",
+                          f"{avg_rating:.2f}" if avg_rating else "—")
+
+    except Exception as e:
+        st.warning(f"Could not load producer's products: {e}")
+
+
+def _render_product_card_in_details(p: dict):
+    """Render a small product card inside the Details expander."""
+    name    = p.get("name", "—")
+    sku     = p.get("sku", "—")
+    price   = p.get("price", 0)
+    stock   = p.get("stock", 0)
+    unit    = p.get("unit", "unit")
+    cat     = p.get("category", "Other")
+    qg      = p.get("quality_grade")
+    brand   = p.get("brand")
+    origin  = p.get("origin")
+    rating  = p.get("avg_rating")
+    reviews = p.get("review_count", 0)
+    img     = p.get("image_url")
+
+    # Stock status
+    if stock == 0:
+        stock_badge = "<span style='background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px; font-size:0.7rem; font-weight:600;'>Out of stock</span>"
+    elif stock < 20:
+        stock_badge = f"<span style='background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-size:0.7rem; font-weight:600;'>Low: {stock}</span>"
+    else:
+        stock_badge = f"<span style='background:#dcfce7; color:#166534; padding:2px 8px; border-radius:10px; font-size:0.7rem; font-weight:600;'>In stock: {stock}</span>"
+
+    img_html = (
+        f"<img src='{img}' style='width:60px; height:60px; border-radius:8px; object-fit:cover;' />"
+        if img
+        else "<div style='width:60px; height:60px; border-radius:8px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:1.5rem;'>📦</div>"
+    )
+
+    # Meta line
+    meta_parts = [f"🏷️ {cat}"]
+    if qg:    meta_parts.append(f"⭐ {qg}")
+    if brand: meta_parts.append(f"🏢 {brand}")
+    if origin: meta_parts.append(f"📍 {origin}")
+    meta_html = " &nbsp;·&nbsp; ".join(meta_parts)
+
+    # Rating
+    rating_html = ""
+    if rating and reviews:
+        rating_html = f"&nbsp;&nbsp;⭐ <b>{rating:.1f}</b> ({reviews})"
+    elif reviews:
+        rating_html = f"&nbsp;&nbsp;⭐ — ({reviews} reviews)"
+
+    st.markdown(
+        f"""
+        <div style='display:flex; gap:14px; padding:12px; margin-bottom:8px;
+                    background:#fff; border:1px solid #e2e8f0; border-radius:10px;
+                    align-items:center;'>
+            <div>{img_html}</div>
+            <div style='flex:1; min-width:0;'>
+                <div style='font-size:0.95rem; font-weight:700; color:#0f172a;
+                            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>
+                    {name}
+                </div>
+                <div style='font-size:0.75rem; color:#64748b; margin-top:2px;'>
+                    SKU: <code>{sku}</code>{rating_html}
+                </div>
+                <div style='font-size:0.72rem; color:#94a3b8; margin-top:2px;'>
+                    {meta_html}
+                </div>
+            </div>
+            <div style='text-align:right; min-width:120px;'>
+                <div style='font-size:1rem; font-weight:800; color:#047857;'>
+                    {format_currency(price)}
+                </div>
+                <div style='font-size:0.7rem; color:#64748b;'>/ {unit}</div>
+                <div style='margin-top:4px;'>{stock_badge}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
