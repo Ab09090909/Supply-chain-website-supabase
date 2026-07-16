@@ -30,7 +30,7 @@ def render_merchant_profile():
             st.error(f"Verification module failed to load: {e}")
         st.markdown("---")
 
-    # ---- Avatar image upload (NEW) ----
+    # ---- Avatar image upload (auto-saves to DB) ----
     st.markdown("##### Profile Photo")
     avatar_url, avatar_err = render_image_uploader(
         label="Upload new avatar",
@@ -38,6 +38,22 @@ def render_merchant_profile():
         current_url=user.get("avatar_url"),
         key="avatar_uploader_merchant",
     )
+
+    # If a new avatar was uploaded, auto-save the URL to the profile
+    # row so the user doesn't have to also click "Save changes".
+    if avatar_url and avatar_url != user.get("avatar_url") and not avatar_err:
+        try:
+            from database.connection import get_supabase_admin_client, get_supabase_client
+            try:
+                writer = get_supabase_admin_client()
+            except Exception:
+                writer = get_supabase_client()
+            writer.table("profiles").update({"avatar_url": avatar_url}).eq("id", user["id"]).execute()
+            st.session_state["user"]["avatar_url"] = avatar_url
+            st.success("✅ Avatar updated!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Avatar save failed: {e}")
 
     st.markdown("---")
 
