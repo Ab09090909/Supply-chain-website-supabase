@@ -131,6 +131,25 @@ def render_producer_dashboard():
         st.warning("Please log in to view this page.")
         return
 
+    # ---- Verification banner for unverified users ----
+    vstatus = user.get("verification_status")
+    if vstatus != "verified":
+        st.markdown("---")
+        st.markdown("### 🔐 Account Verification Required")
+        st.warning(
+            "Your account is not verified yet. To unlock merchant matching and AI features, "
+            "please upload a verification document below."
+        )
+        if st.button("📤 Verify My Account Now", type="primary", use_container_width=True):
+            st.session_state["force_nav"] = "profile"
+            st.rerun()
+        try:
+            from auth.verification import render_verification_page
+            render_verification_page()
+        except Exception as e:
+            st.error(f"Verification module failed to load: {e}")
+        st.markdown("---")
+
     try:
         client = get_supabase_client()
 
