@@ -490,6 +490,11 @@ class _StorageBucket:
           POST /storage/v1/object/sign/{bucket}/{path}
         with body ``{"expiresIn": N}`` and the auth header carrying the
         caller's access token.
+
+        Robust to Supabase response shape variations: the docs say
+        ``{"signedURL": "..."}`` but the API can also return a list
+        ``[{"signedURL": "..."}]`` (older versions) or use the camelCase
+        variant ``signedUrl``. We handle all of these.
         """
         url = f"{self._client.url}/storage/v1/object/sign/{self._bucket}/{path}"
         try:
@@ -501,11 +506,31 @@ class _StorageBucket:
             )
             if r.status_code >= 400:
                 return None
-            data = r.json() if r.text else {}
-            signed = data.get("signedURL") or data.get("signedUrl")
+            # Parse the response — handle dict, list, or weird shapes
+            try:
+                data = r.json() if r.text else {}
+            except Exception:
+                return None
+
+            # Normalise to a list of dicts so we can iterate and find
+            # the signedURL field regardless of shape
+            if isinstance(data, dict):
+                candidates = [data]
+            elif isinstance(data, list):
+                candidates = [d for d in data if isinstance(d, dict)]
+            else:
+                return None
+
+            signed = None
+            for item in candidates:
+                signed = item.get("signedURL") or item.get("signedUrl") or item.get("signed_url")
+                if signed:
+                    break
             if not signed:
                 return None
+
             # The returned path is relative; prepend the storage origin.
+            signed = str(signed)
             if signed.startswith("http"):
                 return signed
             return f"{self._client.url}{signed}"
