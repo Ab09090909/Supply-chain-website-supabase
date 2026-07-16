@@ -132,6 +132,29 @@ def render_customer_dashboard():
         st.warning("Please log in to view this page.")
         return
 
+    # ---- Verification banner for unverified users ----
+    # Show this prominently at the top of the dashboard for brand-new
+    # signups and any unverified user. This is the bulletproof way to
+    # ensure the user sees the verification prompt.
+    vstatus = user.get("verification_status")
+    if vstatus != "verified":
+        st.markdown("---")
+        st.markdown("### 🔐 Account Verification Required")
+        st.warning(
+            "Your account is not verified yet. To unlock ordering, messaging, and AI features, "
+            "please upload a verification document below."
+        )
+        if st.button("📤 Verify My Account Now", type="primary", use_container_width=True):
+            st.session_state["force_nav"] = "profile"
+            st.rerun()
+        # Also show the verification form inline (always renders)
+        try:
+            from auth.verification import render_verification_page
+            render_verification_page()
+        except Exception as e:
+            st.error(f"Verification module failed to load: {e}")
+        st.markdown("---")
+
     try:
         client = get_supabase_client()
 
