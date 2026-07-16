@@ -238,31 +238,27 @@ def render_admin_dashboard():
     # It shows training counts, prediction log size, and self-learning
     # loop state. It is intentionally admin-only because it's operational
     # info, not a user-facing feature.
-    with st.container(border=True):
-        st.subheader("🧠 AI / ML Engine Status")
-        st.caption(
-            "Operational diagnostics for the self-learning ML engine. "
-            "Use this to verify that predictions are being logged and "
-            "scored against actuals, and to spot training data gaps."
-        )
-        try:
-            ai_summary = get_training_summary()
-            if not ai_summary.get("ml_available", True):
-                st.warning(
-                    "⚠️ ML libraries (pandas, numpy, scikit-learn) are not installed. "
-                    "Add them to `requirements.txt` and reboot the app to enable AI features."
-                )
-            else:
-                # render_model_status_panel handles its own 5+4 metric grid
-                # + the self-learning loop caption + a divider.
-                render_model_status_panel(ai_summary)
-        except Exception as e:
-            st.error(f"Failed to load AI engine status: {e}")
-            st.caption(
-                "Most common cause: the `ai_prediction_log` and `ai_model_metrics` "
-                "tables don't exist yet. Run `supabase_sql/migration_v6.sql` in the "
-                "Supabase SQL Editor to create them."
+    #
+    # The panel renders two cards (Model Status + Self-Learning Loop)
+    # using the same green-gradient header + metric-grid pattern as the
+    # other cards on this page. The CSS is embedded in the panel itself
+    # so the visual design is identical to the rest of the dashboard.
+    try:
+        ai_summary = get_training_summary()
+        if not ai_summary.get("ml_available", True):
+            st.warning(
+                "⚠️ ML libraries (pandas, numpy, scikit-learn) are not installed. "
+                "Add them to `requirements.txt` and reboot the app to enable AI features."
             )
+        else:
+            render_model_status_panel(ai_summary)
+    except Exception as e:
+        st.error(f"Failed to load AI engine status: {e}")
+        st.caption(
+            "Most common cause: the `ai_prediction_log` and `ai_model_metrics` "
+            "tables don't exist yet. Run `supabase_sql/migration_v6.sql` in the "
+            "Supabase SQL Editor to create them."
+        )
 
     # ── Recent Orders ─────────────────────────────────────────────────────────
     with st.container(border=True):
