@@ -19,78 +19,11 @@ from utils.helpers import format_currency, format_datetime
 from utils.db_health import render_db_health_warning
 from pages.common.ai_insights import render_model_status_panel
 from ai.engine import get_training_summary
-
-# ── Shared card CSS (same as producer dashboard) ──────────────────────────────
-CARD_CSS = """
-<style>
-.dash-card {
-    background: #ffffff;
-    border-radius: 16px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    margin-bottom: 20px;
-}
-.dash-card-header {
-    background: linear-gradient(135deg, #1a5c2e 0%, #2d8a4e 100%);
-    padding: 20px 24px 18px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-.dash-card-header-icon {
-    font-size: 2rem;
-    line-height: 1;
-}
-.dash-card-header-text h3 {
-    margin: 0;
-    color: #ffffff;
-    font-size: 1.35rem;
-    font-weight: 700;
-    letter-spacing: -0.3px;
-}
-.dash-card-header-text p {
-    margin: 2px 0 0;
-    color: #a8d5b5;
-    font-size: 0.82rem;
-}
-.dash-card-body {
-    padding: 18px 20px;
-}
-.metric-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-.metric-box {
-    flex: 1 1 130px;
-    background: #f7f9f7;
-    border: 1px solid #e4ece6;
-    border-radius: 12px;
-    padding: 14px 16px;
-    text-align: center;
-    min-width: 110px;
-}
-.metric-box .metric-value {
-    font-size: 1.8rem;
-    font-weight: 800;
-    color: #1a5c2e;
-    line-height: 1.1;
-}
-.metric-box .metric-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #6b8f72;
-    margin-top: 4px;
-}
-.metric-box .metric-label-icon {
-    margin-right: 4px;
-}
-.metric-box.alert .metric-value { color: #b85c00; }
-.metric-box.alert { background: #fff8f0; border-color: #f5d5b0; }
-</style>
-"""
+from pages.admin._card import (
+    inject_card_css,
+    admin_card as _card,
+    admin_metric_box as _metric_box,
+)
 
 
 def _metric_box(value: str, label: str, icon: str = "", alert: bool = False) -> str:
@@ -132,7 +65,7 @@ def render_admin_dashboard():
     st.title("🛡️ Admin Dashboard")
     st.caption("Platform-wide overview and system health")
 
-    st.markdown(CARD_CSS, unsafe_allow_html=True)
+    inject_card_css()
 
     user = get_current_user()
     if not user:
