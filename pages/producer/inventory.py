@@ -726,10 +726,64 @@ def _render_edit_product(client, user: dict, product_id: str) -> None:
                         "production_date": str(edit_production_date) if edit_production_date else None,
                         "expiry_date": str(edit_expiry_date) if edit_expiry_date else None,
                     }
-                    client.table("products").update(update_payload).eq("id", product_id).execute()
-                    st.success(f"✅ '{edit_name}' updated successfully.")
-                    st.session_state.pop("editing_product", None)
-                    st.rerun()
+                    # ── Persist the update ──────────────────────────────────────
+                    result = client.table("products").update(update_payload).eq("id", product_id).execute()
+                    returned_rows = (result.data or []) if result else []
+
+                    # ── Verify it actually persisted ──────────────────────────
+                    # RLS can silently drop the UPDATE if the policy doesn't
+                    # match (e.g. wrong role check, missing WITH CHECK, or a
+                    # transient auth issue). To distinguish "save succeeded"
+                    # from "save was rejected by RLS without an error", we
+                    # re-read the row and compare. If the new name doesn't
+                    # match what we just sent, the update was silently
+                    # rejected and we tell the user.
+                    try:
+                        verify = (
+                            client.table("products")
+                            .select("name, updated_at")
+                            .eq("id", product_id)
+                            .maybe_single()
+                            .execute()
+                        )
+                        saved = (verify.data or {}) if verify else {}
+                    except Exception:
+                        saved = {}
+
+                    if saved and saved.get("name") == edit_name:
+                        # ✅ Confirmed: the row was updated and now contains
+                        # the new value. Safe to close the editor.
+                        st.success(
+                            f"✅ '{edit_name}' updated successfully."
+                        )
+                        st.session_state.pop("editing_product", None)
+                        st.rerun()
+                    elif not returned_rows:
+                        # RLS silently rejected the UPDATE — Supabase returned
+                        # 200 OK but with no data because the row didn't match
+                        # the USING clause. This is the "RLS no-op" problem.
+                        st.error(
+                            "❌ **Update was rejected by RLS.** Supabase returned "
+                            "success but no rows were modified. This usually means:\n\n"
+                            "1. Your JWT is stale or invalid — try logging out and logging back in\n"
+                            "2. The `is_admin()` function has the search_path attack vulnerability — "
+                            "run `supabase_sql/migration_v6.sql` to fix it\n"
+                            "3. The `Producers update own products` policy is missing a `WITH CHECK` "
+                            "clause — run `supabase_sql/migration_v6.sql` to add one\n\n"
+                            "**Detail:** `update().eq('id', product_id).execute()` returned 0 rows. "
+                            "The row was not modified."
+                        )
+                    else:
+                        # Update returned rows but the verify read disagrees.
+                        # Could be a network/replication hiccup.
+                        st.warning(
+                            f"⚠️ Update completed but the verify-read shows the old data. "
+                            f"This is usually a transient issue — the change will appear on the "
+                            f"next page refresh. If it persists, log out and log back in. "
+                            f"Last verified name: {saved.get('name', '—')!r}, expected: {edit_name!r}"
+                        )
+                        st.session_state.pop("editing_product", None)
+                        st.rerun()
                 except Exception as e:
                     err = str(e).lower()
                     if "row-level security" in err or "42501" in err:
