@@ -150,6 +150,10 @@ def sign_up(
             profile_data,
             refresh_token=response.session.refresh_token,
         )
+        # Mark this session as needing verification. The app will
+        # show the verification prompt on every page until the user
+        # completes verification (or an admin approves their docs).
+        st.session_state["must_verify"] = True
         return True, "Signup successful."
     except Exception as e:
         msg = str(e)
@@ -202,6 +206,17 @@ def sign_in(email: str, password: str) -> Tuple[bool, str]:
             profile_data,
             refresh_token=response.session.refresh_token,
         )
+        # If the user logged in but is not yet verified, mark the
+        # session as "must verify" so the app shows the verification
+        # prompt on every page.
+        try:
+            vstatus = profile_data.get("verification_status")
+            if vstatus in (None, "pending", "rejected"):
+                st.session_state["must_verify"] = True
+            else:
+                st.session_state.pop("must_verify", None)
+        except Exception:
+            pass
         return True, "Login successful."
     except Exception as e:
         msg = str(e).lower()
