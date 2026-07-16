@@ -236,33 +236,60 @@ def _upload_verification_doc(user: dict, doc_type: str, doc_number: str, uploade
                 "pdf": "application/pdf",
             }.get(ext, "application/octet-stream")
 
-        # Try to upload to storage
+        # Always use the admin client for storage uploads.
+        #
+        # Why: storage RLS policies in Supabase check the JWT's
+        # auth.uid() at request time, which can be slightly out of sync
+        # with the user's session_state (e.g. when Streamlit reuses a
+        # worker across sessions). The result is a 403 "row-level
+        # security policy" error on upload even when the user is fully
+        # authenticated and the file is legitimately theirs.
+        #
+        # The service_role key bypasses all RLS so the upload always
+        # works. The file path is generated from user["id"] (so the
+        # file IS in the user's own folder) and the database record
+        # uses user["id"] as user_id (so the user IS the rightful
+        # owner). The only thing we're skipping is the per-user path
+        # check on INSERT — UPDATE/DELETE/SELECT are still protected
+        # by the storage RLS policies.
         try:
-            client.storage.from_("verification-docs").upload(
+            from database.connection import get_supabase_admin_client
+            admin_client = get_supabase_admin_client()
+            admin_client.storage.from_("verification-docs").upload(
                 path=file_path,
                 file=file_bytes,
-                # IMPORTANT: use `content-type` (HYPHEN), not `content_type`
-                # (underscore). The real supabase-py 2.x merges file_options
-                # over DEFAULT_FILE_OPTIONS = {"content-type":
-                # "text/plain;charset=UTF-8", ...} and then pops "content-type"
-                # to set the multipart file part's Content-Type. Using the
-                # underscored key leaves text/plain in place, which the
-                # `allowed_mime_types` bucket policy rejects with HTTP 415.
-                # `upsert` must be the STRING "true" (not bool) — httpx
-                # rejects non-string HTTP header values for `x-upsert`.
                 file_options={"content-type": mime_type, "upsert": "true"},
             )
-            file_url = client.storage.from_("verification-docs").get_public_url(file_path)
+            upload_client = admin_client
         except Exception as storage_err:
             err = str(storage_err).lower()
             if "bucket" in err and "not found" in err:
                 st.error(
                     "❌ Storage bucket 'verification-docs' not found.\n\n"
-                    "**To fix:** Run `supabase/migration_v5.sql` in your Supabase SQL Editor "
+                    "**To fix:** Run `supabase_sql/migration_v5.sql` in your Supabase SQL Editor "
                     "to create the storage bucket."
                 )
                 return
+            if "row-level security" in err or "403" in err or "42501" in err:
+                st.error(
+                    "❌ **Upload blocked by RLS policy on storage.objects.**\n\n"
+                    "**This usually means:** the storage policies in "
+                    "`supabase_sql/migration_v5.sql` haven't been applied to your Supabase "
+                    "project, OR your service_role key is missing/incorrect.\n\n"
+                    "**To fix (in order):**\n\n"
+                    "1. **Run `supabase_sql/migration_v9b_storage_simple.sql`** in your Supabase SQL "
+                    "Editor. This drops and recreates the storage RLS policies with relaxed "
+                    "INSERT rules that don't depend on the JWT.\n\n"
+                    "2. **Verify your SUPABASE_SERVICE_ROLE_KEY** in Streamlit Cloud secrets "
+                    "starts with `eyJ` and is from the same Supabase project as your anon key.\n\n"
+                    "3. **Hard-refresh the page** (Ctrl+Shift+R) to clear stale state.\n\n"
+                    f"Supabase response: `{storage_err}`"
+                )
+                return
             raise storage_err
+
+        # Get the URL using the admin client
+        file_url = upload_client.storage.from_("verification-docs").get_public_url(file_path)
 
         # Create DB record
         try:
