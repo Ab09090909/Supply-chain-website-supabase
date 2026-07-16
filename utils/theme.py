@@ -2,7 +2,7 @@
 Theme system — modern, professional, attractive.
 
 Light mode: clean white + emerald accents + subtle shadows
-Dark mode: deep navy + glassmorphism + emerald highlights
+Dark mode: deep slate + glassmorphism + emerald highlights
 """
 from __future__ import annotations
 
@@ -36,13 +36,11 @@ def _inject_css(css: str):
         st.markdown(f'<div style="display:none">{css}</div>', unsafe_allow_html=True)
 
 
-def apply_theme_css():
-    init_theme()
-    theme = st.session_state.get("app_theme", "light")
-
-    # Global styles — modern, professional
-    global_css = """<style>
-/* ===== GLOBAL ===== */
+# ---------------------------------------------------------------------------
+# GLOBAL CSS — applies to both themes (transitions, spacing, animations)
+# ---------------------------------------------------------------------------
+_GLOBAL_CSS = """<style>
+/* ===== Animations ===== */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
@@ -56,11 +54,7 @@ def apply_theme_css():
     to { opacity: 1; transform: translateX(0); }
 }
 
-.stApp > div > div > div {
-    animation: fadeInUp 0.25s ease-out;
-}
-
-/* Smooth transitions */
+/* Smooth transitions for all interactive elements */
 .stButton > button,
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
@@ -85,48 +79,10 @@ def apply_theme_css():
 .stButton > button:active {
     transform: translateY(0) !important;
 }
-
-/* Primary button type */
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
     border: none !important;
     color: white !important;
-}
-
-/* Compact containers */
-[data-testid="stVerticalBlock"] > div {
-    padding: 0.25rem 0 !important;
-}
-
-/* Sidebar animation */
-[data-testid="stSidebar"] {
-    animation: slideInLeft 0.3s ease-out !important;
-}
-
-/* Tab transitions */
-.stTabs [data-baseweb="tab-panel"] {
-    animation: fadeIn 0.2s ease-out !important;
-}
-
-/* Image styling */
-.stImage img {
-    transition: transform 0.3s ease !important;
-    border-radius: 8px !important;
-}
-
-/* Compact metrics */
-[data-testid="stMetricValue"] {
-    font-size: 1.5rem !important;
-    font-weight: 700 !important;
-}
-[data-testid="stMetricLabel"] {
-    font-size: 0.75rem !important;
-    font-weight: 500 !important;
-}
-
-/* Captions */
-.stCaption {
-    font-size: 0.75rem !important;
 }
 
 /* Headings — professional hierarchy */
@@ -137,13 +93,16 @@ def apply_theme_css():
 .stMarkdown h5 { font-size: 0.9rem !important; font-weight: 600 !important; }
 .stMarkdown h6 { font-size: 0.85rem !important; font-weight: 600 !important; }
 
+/* Compact metrics */
+[data-testid="stMetricValue"] { font-size: 1.5rem !important; font-weight: 700 !important; }
+[data-testid="stMetricLabel"] { font-size: 0.75rem !important; font-weight: 500 !important; }
+
+/* Captions */
+.stCaption { font-size: 0.75rem !important; }
+
 /* Dataframes */
-.stDataFrame {
-    font-size: 0.8rem !important;
-}
-.stDataFrame th {
-    font-weight: 600 !important;
-}
+.stDataFrame { font-size: 0.8rem !important; }
+.stDataFrame th { font-weight: 600 !important; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -151,54 +110,211 @@ def apply_theme_css():
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* Links */
-a { transition: color 0.2s ease !important; }
-a:hover { text-decoration: underline !important; }
-
-/* Form submit button */
-.stFormSubmitButton > button {
-    border-radius: 8px !important;
-    font-weight: 600 !important;
-}
-
-/* Expander */
-.stExpander {
-    border-radius: 12px !important;
-    overflow: hidden;
-}
-
 /* Alerts */
-.stAlert {
-    border-radius: 10px !important;
-    animation: fadeInUp 0.25s ease-out !important;
-}
+.stAlert { border-radius: 10px !important; animation: fadeInUp 0.25s ease-out !important; }
+
+/* Sidebar animation */
+[data-testid="stSidebar"] { animation: slideInLeft 0.3s ease-out !important; }
+
+/* Tab transitions */
+.stTabs [data-baseweb="tab-panel"] { animation: fadeIn 0.2s ease-out !important; }
+
+/* Image styling */
+.stImage img { transition: transform 0.3s ease !important; border-radius: 8px !important; }
 </style>"""
 
-    if theme == "dark":
-        dark_css = """<style>
-/* ===== DARK MODE — Deep navy + glassmorphism ===== */
+
+# ---------------------------------------------------------------------------
+# LIGHT MODE — clean white + emerald
+# ---------------------------------------------------------------------------
+_LIGHT_CSS = """<style>
+/* App background */
 .stApp, [data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
-    color: #e2e8f0 !important;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+    color: #0f172a !important;
 }
+.main .block-container { color: #0f172a !important; }
+
+/* Sidebar */
 [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
-    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%) !important;
-    color: #e2e8f0 !important;
-    border-right: 1px solid #334155 !important;
+    background: #ffffff !important;
+    border-right: 1px solid #e2e8f0 !important;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.03) !important;
+    color: #0f172a !important;
 }
-[data-testid="stVerticalBlock"] > div,
-.stContainer > div {
-    background: rgba(30, 41, 59, 0.6) !important;
-    color: #e2e8f0 !important;
-    border: 1px solid #334155 !important;
-    border-radius: 12px !important;
-    backdrop-filter: blur(10px) !important;
-}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 { color: #0f172a !important; }
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span { color: #1e293b !important; }
+
+/* Form labels */
+.stTextArea > div > label,
+.stTextInput > div > label,
+.stNumberInput > div > label,
+.stSelectbox > div > label,
+.stCheckbox > label,
+.stRadio > label,
+.stFileUploader > div > label { color: #334155 !important; }
+
+/* Inputs */
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea,
 .stNumberInput > div > div > input,
 .stSelectbox > div > div > div {
-    background: rgba(15, 23, 42, 0.8) !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+}
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: #10b981 !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12) !important;
+}
+
+/* Code */
+.stMarkdown code, code {
+    background: #f1f5f9 !important;
+    color: #047857 !important;
+    padding: 0.15em 0.4em !important;
+    border-radius: 4px !important;
+    font-size: 0.9em !important;
+}
+.stCode, pre {
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+.stCode code, pre code { color: #0f172a !important; background: transparent !important; }
+
+/* Dataframes */
+.stDataFrame, .stDataFrame table, .stDataFrame th, .stDataFrame td {
+    background: #ffffff !important;
+    color: #0f172a !important;
+}
+.stDataFrame th { background: #f1f5f9 !important; color: #047857 !important; }
+
+/* Tables */
+.stMarkdown table, .stMarkdown th, .stMarkdown td {
+    color: #0f172a !important;
+    border-color: #e2e8f0 !important;
+}
+.stMarkdown th { background: #f1f5f9 !important; color: #047857 !important; }
+.stMarkdown td { background: #ffffff !important; }
+
+/* Metrics */
+[data-testid="stMetric"] {
+    background: #ffffff !important;
+    padding: 1rem !important;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+}
+[data-testid="stMetricLabel"] { color: #64748b !important; }
+[data-testid="stMetricValue"] { color: #047857 !important; }
+
+/* Expander */
+.stExpander {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    color: #0f172a !important;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] { background: transparent !important; gap: 4px !important; }
+.stTabs [data-baseweb="tab"] {
+    background: #f8fafc !important;
+    color: #64748b !important;
+    border-radius: 8px 8px 0 0 !important;
+    border-bottom: 3px solid transparent !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: #ecfdf5 !important;
+    color: #047857 !important;
+    border-bottom-color: #10b981 !important;
+}
+
+/* Toast */
+[data-testid="stToast"] {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+/* Links */
+a { color: #059669 !important; }
+a:hover { color: #047857 !important; text-decoration: underline !important; }
+
+/* Scrollbar thumb */
+::-webkit-scrollbar-thumb { background: #cbd5e1 !important; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8 !important; }
+
+/* Spinner */
+.stSpinner > div { border-color: #10b981 transparent transparent transparent !important; }
+
+/* Auth card */
+.auth-card {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.1) !important;
+    border: 1px solid #e2e8f0 !important;
+}
+.auth-title { color: #0f172a !important; }
+.auth-subtitle { color: #64748b !important; }
+.role-card {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    color: #0f172a !important;
+}
+.role-card.selected {
+    background: #ecfdf5 !important;
+    border-color: #10b981 !important;
+}
+</style>"""
+
+
+# ---------------------------------------------------------------------------
+# DARK MODE — deep slate + emerald accents
+# ---------------------------------------------------------------------------
+_DARK_CSS = """<style>
+/* App background — deep navy gradient */
+.stApp, [data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%) !important;
+    color: #e2e8f0 !important;
+}
+.main .block-container { color: #e2e8f0 !important; }
+
+/* Sidebar — slightly darker than the main app */
+[data-testid="stSidebar"], [data-testid="stSidebarContent"] {
+    background: linear-gradient(180deg, #0b1220 0%, #1e293b 100%) !important;
+    border-right: 1px solid #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 { color: #f8fafc !important; }
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span { color: #cbd5e1 !important; }
+
+/* Form labels */
+.stTextArea > div > label,
+.stTextInput > div > label,
+.stNumberInput > div > label,
+.stSelectbox > div > label,
+.stCheckbox > label,
+.stRadio > label,
+.stFileUploader > div > label { color: #cbd5e1 !important; }
+
+/* Captions */
+.stCaption { color: #94a3b8 !important; }
+
+/* Inputs */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stNumberInput > div > div > input,
+.stSelectbox > div > div > div {
+    background: rgba(15, 23, 42, 0.7) !important;
     color: #f1f5f9 !important;
     border: 1px solid #334155 !important;
     border-radius: 8px !important;
@@ -206,39 +322,94 @@ a:hover { text-decoration: underline !important; }
 .stTextInput > div > div > input:focus,
 .stTextArea > div > div > textarea:focus {
     border-color: #10b981 !important;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2) !important;
 }
-.stDataFrame, .stDataFrame table, .stDataFrame th, .stDataFrame td {
-    background: rgba(30, 41, 59, 0.8) !important;
-    color: #e2e8f0 !important;
-}
-.stDataFrame th {
-    background: #334155 !important;
-    color: #34d399 !important;
-}
-.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span {
-    color: #cbd5e1 !important;
-}
-h1, h2, h3, h4, h5, h6 {
-    color: #f8fafc !important;
-}
-.stMarkdown code, .stMarkdown p code, .stMarkdown li code, code {
-    background: #334155 !important;
+
+/* Code */
+.stMarkdown code, code {
+    background: rgba(51, 65, 85, 0.6) !important;
     color: #6ee7b7 !important;
     padding: 0.15em 0.4em !important;
     border-radius: 4px !important;
     font-size: 0.9em !important;
 }
 .stCode, pre {
-    background: #0f172a !important;
+    background: #0b1220 !important;
     color: #e2e8f0 !important;
     border: 1px solid #334155 !important;
     border-radius: 8px !important;
 }
-.stCode code, pre code {
+.stCode code, pre code { color: #e2e8f0 !important; background: transparent !important; }
+
+/* Dataframes */
+.stDataFrame, .stDataFrame table, .stDataFrame th, .stDataFrame td {
+    background: rgba(15, 23, 42, 0.6) !important;
     color: #e2e8f0 !important;
-    background: transparent !important;
 }
+.stDataFrame th { background: #1e293b !important; color: #34d399 !important; }
+
+/* Tables */
+.stMarkdown table, .stMarkdown th, .stMarkdown td {
+    color: #e2e8f0 !important;
+    border-color: #334155 !important;
+}
+.stMarkdown th { background: #1e293b !important; color: #34d399 !important; }
+.stMarkdown td { background: rgba(15, 23, 42, 0.5) !important; }
+
+/* Metrics — emerald accent */
+[data-testid="stMetric"] {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.6) 100%) !important;
+    padding: 1rem !important;
+    border-radius: 12px !important;
+    border: 1px solid #334155 !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+}
+[data-testid="stMetricLabel"] { color: #94a3b8 !important; }
+[data-testid="stMetricValue"] { color: #34d399 !important; }
+
+/* Expander */
+.stExpander {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border: 1px solid #334155 !important;
+    border-radius: 12px !important;
+    color: #e2e8f0 !important;
+}
+.stExpander details summary { color: #e2e8f0 !important; }
+.stExpander p, .stExpander li, .stExpander span { color: #cbd5e1 !important; }
+
+/* Tabs — emerald accent on active */
+.stTabs [data-baseweb="tab-list"] { background: transparent !important; gap: 4px !important; }
+.stTabs [data-baseweb="tab"] {
+    background: rgba(30, 41, 59, 0.5) !important;
+    color: #cbd5e1 !important;
+    border-radius: 8px 8px 0 0 !important;
+    border-bottom: 3px solid transparent !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: #34d399 !important;
+    border-bottom-color: #10b981 !important;
+}
+
+/* Toast */
+[data-testid="stToast"] {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155 !important;
+}
+
+/* Links */
+a { color: #34d399 !important; }
+a:hover { color: #6ee7b7 !important; }
+
+/* Scrollbar thumb */
+::-webkit-scrollbar-thumb { background: #475569 !important; }
+::-webkit-scrollbar-thumb:hover { background: #64748b !important; }
+
+/* Spinner */
+.stSpinner > div { border-color: #34d399 transparent transparent transparent !important; }
+
+/* Auth card */
 .auth-card {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
     color: #e2e8f0 !important;
@@ -252,136 +423,20 @@ h1, h2, h3, h4, h5, h6 {
     border-color: #334155 !important;
     color: #e2e8f0 !important;
 }
-[data-testid="stMetric"] {
-    background: rgba(30, 41, 59, 0.6) !important;
-    padding: 1rem !important;
-    border-radius: 12px !important;
-    border: 1px solid #334155 !important;
-}
-[data-testid="stMetricLabel"] { color: #94a3b8 !important; }
-[data-testid="stMetricValue"] { color: #34d399 !important; }
-.stExpander {
-    background: rgba(30, 41, 59, 0.6) !important;
-    border: 1px solid #334155 !important;
-    color: #e2e8f0 !important;
-}
-.stExpander details, .stExpander summary {
-    color: #e2e8f0 !important;
-}
-.stExpander p, .stExpander li, .stExpander span {
-    color: #e2e8f0 !important;
-}
-.stMarkdown table, .stMarkdown th, .stMarkdown td {
-    color: #e2e8f0 !important;
-}
-.stMarkdown th {
-    background: #334155 !important;
-    color: #6ee7b7 !important;
-}
-.stMarkdown td {
-    background: rgba(30, 41, 59, 0.5) !important;
-}
-.stTabs [data-baseweb="tab-list"] { background: transparent !important; gap: 4px !important; }
-.stTabs [data-baseweb="tab"] {
-    background: rgba(30, 41, 59, 0.5) !important;
-    color: #cbd5e1 !important;
-    border-radius: 8px 8px 0 0 !important;
-    border-bottom: 3px solid transparent !important;
-}
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
+.role-card.selected {
     background: rgba(16, 185, 129, 0.15) !important;
-    color: #34d399 !important;
-    border-bottom-color: #10b981 !important;
-}
-::-webkit-scrollbar-thumb { background: #475569 !important; }
-.stAlert { border-radius: 10px !important; }
-.stTextArea > div > label,
-.stTextInput > div > label,
-.stNumberInput > div > label,
-.stSelectbox > div > label,
-.stCheckbox > label,
-.stRadio > label,
-.stFileUploader > div > label {
-    color: #e2e8f0 !important;
-}
-.stSelectbox > div > div > div {
-    color: #f1f5f9 !important;
-}
-.stCaption { color: #94a3b8 !important; }
-a { color: #34d399 !important; }
-a:hover { color: #6ee7b7 !important; }
-[data-testid="stToast"] {
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
-    border: 1px solid #334155 !important;
-}
-.stSpinner > div {
-    border-color: #10b981 transparent transparent transparent !important;
-}
-</style>"""
-        _inject_css(global_css + dark_css)
-    else:
-        light_css = """<style>
-/* ===== LIGHT MODE — Clean white + emerald ===== */
-.stApp {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-}
-[data-testid="stSidebar"] {
-    background: #ffffff !important;
-    border-right: 1px solid #e2e8f0 !important;
-    box-shadow: 2px 0 8px rgba(0,0,0,0.03) !important;
-}
-[data-testid="stVerticalBlock"] > div,
-.stContainer > div {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
-}
-.stTextInput > div > div > input,
-.stTextArea > div > div > textarea,
-.stNumberInput > div > div > input,
-.stSelectbox > div > div > div {
-    background: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 8px !important;
-}
-.stTextInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {
     border-color: #10b981 !important;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12) !important;
 }
-.stDataFrame th {
-    background: #f1f5f9 !important;
-    color: #047857 !important;
-    font-weight: 600 !important;
-}
-[data-testid="stMetric"] {
-    background: #ffffff !important;
-    padding: 1rem !important;
-    border-radius: 12px !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
-}
-[data-testid="stMetricLabel"] { color: #64748b !important; }
-[data-testid="stMetricValue"] { color: #047857 !important; }
-.stExpander {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-}
-.stTabs [data-baseweb="tab-list"] { background: transparent !important; gap: 4px !important; }
-.stTabs [data-baseweb="tab"] {
-    background: #f8fafc !important;
-    color: #64748b !important;
-    border-radius: 8px 8px 0 0 !important;
-    border-bottom: 3px solid transparent !important;
-}
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    background: #ecfdf5 !important;
-    color: #047857 !important;
-    border-bottom-color: #10b981 !important;
-}
-.stAlert { border-radius: 10px !important; }
 </style>"""
-        _inject_css(global_css + light_css)
+
+
+def apply_theme_css():
+    init_theme()
+    theme = st.session_state.get("app_theme", "light")
+
+    _inject_css(_GLOBAL_CSS)
+
+    if theme == "dark":
+        _inject_css(_DARK_CSS)
+    else:
+        _inject_css(_LIGHT_CSS)
