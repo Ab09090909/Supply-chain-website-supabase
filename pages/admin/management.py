@@ -76,15 +76,24 @@ _USER_MANAGEMENT_CSS = """
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 8px;
+    align-items: stretch;
 }
 .um-pill {
-    display: inline-block;
-    padding: 3px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
     border-radius: 999px;
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
+    min-width: 130px;
+    height: 32px;
+    box-sizing: border-box;
+    white-space: nowrap;
+    text-align: center;
+    line-height: 1.2;
 }
 .um-user-card-right {
     flex: 1 1 50%;
