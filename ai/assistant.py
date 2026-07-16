@@ -16,6 +16,11 @@ Self-learning (v6): the system prompt is augmented with LIVE platform stats
 (orders, products, demand accuracy %, price accuracy %) fetched from the
 MLEngine summary, so the assistant can answer questions like "how accurate
 are the demand forecasts?" with real numbers.
+
+Admin-only context: the live context block is only injected for users
+whose role is "admin". Producers, merchants, and customers get the base
+system prompt without the internal ML metrics — those are operational
+diagnostics, not user-facing features.
 """
 from __future__ import annotations
 
@@ -39,7 +44,7 @@ PLATFORM FEATURES YOU KNOW ABOUT:
    - Demand Forecast: Gradient Boosting (or linear regression fallback) per product, predicts next 30-day demand, with a chart of actuals vs fitted vs forecast
    - Price Prediction: Random Forest (or linear regression fallback) suggests optimal prices (increase/decrease/hold), with a per-product accuracy chart
    - Recommendations: Collaborative filtering suggests products to buy/stock
-   - **The AI is self-learning**: every prediction is logged, and once the truth arrives (order placed, price changed) the engine computes MAE/MAPE per product and uses that to bias-correct the next prediction. The longer the platform runs, the more accurate it becomes.
+   - Per-product accuracy is shown for the user's own products; the platform-wide internal stats (training counts, self-learning loop) are visible only to admins on the admin dashboard.
 
 5. **AI Merchant Match** (🤝, producers only): AI finds best merchant matches based on category overlap, quality grades, brands, price range, payment terms, location, and order history. Shows match percentage. Producer can send agreement requests; merchant can confirm or cancel.
 
@@ -69,7 +74,19 @@ def _build_live_context_block() -> str:
     """Pull live platform stats from the MLEngine summary and format them
     as a context block appended to the system prompt. If ML libraries or
     DB aren't available, returns an empty string.
+
+    Only included for users whose role is "admin". Producers, merchants,
+    and customers do not get the internal ML metrics — those are
+    operational diagnostics, not user-facing features.
     """
+    # Role gate: live context is admin-only
+    try:
+        user = st.session_state.get("user") or {}
+        if user.get("role") != "admin":
+            return ""
+    except Exception:
+        return ""
+
     try:
         from ai.engine import get_training_summary
         summary = get_training_summary()
@@ -83,7 +100,7 @@ def _build_live_context_block() -> str:
         return f"{v:.1f}%" if isinstance(v, (int, float)) else "not enough data yet"
 
     lines = [
-        "\n\n--- LIVE PLATFORM CONTEXT (refreshed every 5 min) ---",
+        "\n\n--- LIVE PLATFORM CONTEXT (admin-only, refreshed every 5 min) ---",
         f"Orders placed on platform: {summary.get('orders_count', 0)}",
         f"Order line items: {summary.get('order_items_count', 0)}",
         f"Active products: {summary.get('products_count', 0)}",
@@ -96,7 +113,7 @@ def _build_live_context_block() -> str:
         f"Demand forecast accuracy: {fmt_pct(summary.get('demand_accuracy_pct'))}",
         f"Price prediction accuracy: {fmt_pct(summary.get('price_accuracy_pct'))}",
         f"Model version: {summary.get('model_version', 'unknown')}",
-        "When the user asks about AI accuracy, quote these numbers. They reflect real platform data, not guesses.",
+        "When an admin asks about AI accuracy, quote these numbers. They reflect real platform data, not guesses.",
     ]
     return "\n".join(lines)
 
