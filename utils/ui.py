@@ -66,14 +66,55 @@ ICON_GRADIENTS = {
 # ============================================================
 # PAGE HEADER
 # ============================================================
-def page_header(title: str, subtitle: str = "") -> None:
-    """Render a clean page header with title + subtitle."""
+def page_header(title: str, subtitle: str = "", icon: str = "") -> None:
+    """Render an attractive, animated page header with title + subtitle.
+
+    A subtle gradient strip + animated accent dot make the header feel
+    alive without distracting from the content. Pass an optional emoji
+    to display it inside a gradient badge.
+    """
+    icon_html = ""
+    if icon:
+        icon_html = (
+            f"<div style='display:inline-flex; align-items:center; justify-content:center;"
+            f"width:42px; height:42px; border-radius:12px;"
+            f"background:linear-gradient(135deg, #10b981 0%, #34d399 50%, #6ee7b7 100%);"
+            f"background-size:200% 200%;"
+            f"animation: gradientShift 6s ease infinite, bounceIn 0.5s ease-out;"
+            f"font-size:1.4rem; box-shadow:0 4px 14px rgba(16,185,129,0.3);"
+            f"margin-right:12px; vertical-align:middle;'>{icon}</div>"
+        )
+
     st.markdown(
         f"""
-        <div style='margin-bottom: 1rem; padding: 0.5rem 0;'>
-            <h1 style='font-size: 1.5rem; font-weight: 700; color: {COLORS['slate_900']};
-                       margin: 0; line-height: 1.2; letter-spacing: -0.01em;'>{title}</h1>
-            {f"<p style='color: {COLORS['slate_500']}; font-size: 0.875rem; margin: 0.25rem 0 0 0;'>{subtitle}</p>" if subtitle else ""}
+        <div style='
+            margin: 0 0 1.5rem 0;
+            padding: 1rem 1.25rem;
+            background: linear-gradient(135deg, rgba(16,185,129,0.04) 0%, rgba(52,211,153,0.02) 100%);
+            border-radius: 14px;
+            border: 1px solid rgba(16,185,129,0.12);
+            border-left: 4px solid;
+            border-image: linear-gradient(180deg, #10b981 0%, #34d399 100%) 1;
+            position: relative;
+            overflow: hidden;
+            animation: fadeInDown 0.4s ease-out;
+        '>
+            <div style='display:flex; align-items:center;'>
+                {icon_html}
+                <div style='flex:1; min-width:0;'>
+                    <h1 style='
+                        font-size: 1.5rem;
+                        font-weight: 800;
+                        background: linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        background-clip: text;
+                        margin: 0; line-height: 1.2; letter-spacing: -0.02em;
+                    '>{title}</h1>
+                    {f"<p style='color: #64748b; font-size: 0.85rem; margin: 0.25rem 0 0 0; font-weight:500;'>{subtitle}</p>" if subtitle else ""}
+                </div>
+                <div class='pulse-dot' style='flex-shrink:0;'></div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -255,3 +296,157 @@ def show_error_message(message: str) -> None:
 
 def show_info_message(message: str) -> None:
     st.info(message)
+
+
+# ============================================================
+# ANIMATED SECTION HEADER
+# ============================================================
+def section_header(label: str, icon: str = "", color: str = "emerald") -> None:
+    """Render an animated section header — small uppercase label with optional icon.
+
+    Useful to separate logical sections of a page with a consistent look.
+    """
+    gradient = GRADIENTS.get(color, GRADIENTS["emerald"])
+    icon_html = (
+        f"<span style='display:inline-block; width:24px; height:24px; line-height:24px;"
+        f"text-align:center; background:{gradient}; border-radius:6px; "
+        f"font-size:0.8rem; margin-right:6px; box-shadow:0 2px 6px rgba(0,0,0,0.1);'>{icon}</span>"
+        if icon else ""
+    )
+    st.markdown(
+        f"""
+        <div style='
+            display:flex; align-items:center; gap:4px;
+            margin: 1.5rem 0 0.75rem 0;
+            padding: 0.25rem 0;
+            border-bottom: 2px solid;
+            border-image: linear-gradient(90deg, {gradient.replace('linear-gradient', 'linear-gradient')} 0%, transparent 100%) 1;
+            animation: fadeInLeft 0.4s ease-out;
+        '>
+            <span style='
+                font-size: 0.72rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.12em;
+                color: #047857;
+            '>{icon_html}{label}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# KPI DASHBOARD GRID — 4 gradient cards in one row
+# ============================================================
+def kpi_dashboard(cards: list[dict]) -> None:
+    """Render a row of colorful gradient KPI cards.
+
+    Each card is a dict: ``{"label": str, "value": str, "icon": str, "color": str, "delta": str}``
+    where ``color`` is one of the keys of ``GRADIENTS`` (emerald, blue,
+    purple, amber, red, teal, pink, indigo) and ``delta`` is optional.
+
+    The whole row is wrapped in a 1fr grid that adapts to up to 4 cards
+    on desktop, 2 on tablet, 1 on mobile.
+    """
+    n = len(cards)
+    if n == 0:
+        return
+    grid_cols = min(n, 4)
+
+    html_cards = []
+    for c in cards:
+        label   = c.get("label", "")
+        value   = c.get("value", "")
+        icon    = c.get("icon", "")
+        color   = c.get("color", "emerald")
+        delta   = c.get("delta", "")
+        gradient = GRADIENTS.get(color, GRADIENTS["emerald"])
+        # Optional: light/dark variant for the gradient (opacity in the corners)
+        delta_html = ""
+        if delta:
+            delta_color = "#059669" if not delta.startswith("-") else "#dc2626"
+            arrow = "▲" if not delta.startswith("-") else "▼"
+            delta_html = (
+                f"<div style='font-size:0.7rem; color:{delta_color}; font-weight:600; margin-top:0.25rem;'>"
+                f"{arrow} {delta}</div>"
+            )
+
+        html_cards.append(
+            f"""
+            <div style='
+                background: {gradient};
+                color: white;
+                border-radius: 14px;
+                padding: 1rem 1.1rem;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+                position: relative;
+                overflow: hidden;
+                min-height: 100px;
+                transition: transform 0.25s ease, box-shadow 0.25s ease;
+                animation: scaleIn 0.4s ease-out backwards;
+            ' onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 12px 28px rgba(0,0,0,0.2)';"
+               onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 14px rgba(0,0,0,0.12)';">
+                <div style='display:flex; justify-content:space-between; align-items:flex-start;'>
+                    <div style='font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; opacity:0.95;'>{label}</div>
+                    <div style='font-size:1.4rem; opacity:0.9;'>{icon}</div>
+                </div>
+                <div style='font-size:1.65rem; font-weight:800; margin-top:0.25rem; line-height:1.1;'>{value}</div>
+                {delta_html}
+                <!-- decorative blob in the corner -->
+                <div style='
+                    position:absolute; bottom:-20px; right:-20px;
+                    width:80px; height:80px; border-radius:50%;
+                    background: rgba(255,255,255,0.12);
+                '></div>
+            </div>
+            """
+        )
+
+    st.markdown(
+        f"""
+        <div style='
+            display:grid;
+            grid-template-columns: repeat({grid_cols}, minmax(0, 1fr));
+            gap: 12px;
+            margin: 0.5rem 0 1.25rem 0;
+        '>
+            {"".join(html_cards)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# ANIMATED PROGRESS BAR
+# ============================================================
+def animated_progress(label: str, value: float, max_value: float = 100.0, color: str = "emerald") -> None:
+    """Render a custom animated progress bar with a label.
+
+    ``value`` / ``max_value`` are unit-less (e.g. 7 / 10 for 70% complete).
+    """
+    pct = max(0.0, min(100.0, (value / max(1, max_value)) * 100.0))
+    gradient = GRADIENTS.get(color, GRADIENTS["emerald"])
+    st.markdown(
+        f"""
+        <div style='margin: 0.5rem 0;'>
+            <div style='display:flex; justify-content:space-between; font-size:0.78rem; font-weight:600; color:#475569; margin-bottom:4px;'>
+                <span>{label}</span>
+                <span style='color:#047857;'>{pct:.0f}%</span>
+            </div>
+            <div style='background:#e2e8f0; border-radius:8px; height:10px; overflow:hidden;'>
+                <div style='
+                    width: {pct}%;
+                    height: 100%;
+                    background: {gradient};
+                    background-size: 200% 100%;
+                    border-radius: 8px;
+                    animation: gradientShift 3s ease infinite;
+                    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+                '></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
