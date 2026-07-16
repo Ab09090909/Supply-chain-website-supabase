@@ -9,6 +9,7 @@ from utils.ui import page_header
 from utils.helpers import format_currency, format_datetime
 from utils.tracking_ui import render_buyer_tracking
 from utils.invoice_ui import render_invoice_button
+from utils.reviews_ui import render_order_rating_widget
 
 
 def render_customer_orders():
@@ -51,7 +52,30 @@ def render_customer_orders():
         except Exception:
             pass
 
+    # Pre-fetch the products referenced by these orders so the rating
+    # widget can show the product name + image without N extra queries.
+    product_ids = list({
+        it.get("product_id")
+        for o in orders
+        for it in (o.get("order_items") or [])
+        if it.get("product_id")
+    })
+    product_map: dict = {}
+    if product_ids:
+        try:
+            prods = (
+                client.table("products")
+                .select("id, name, sku, image_url, avg_rating, review_count")
+                .in_("id", product_ids)
+                .execute()
+            ).data or []
+            for p in prods:
+                product_map[p["id"]] = p
+        except Exception:
+            pass
+
     for o in orders:
+        status = o.get("status", "pending")
         with st.container(border=True):
             col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
             with col1:
@@ -60,7 +84,7 @@ def render_customer_orders():
             with col2:
                 st.metric("Total", format_currency(o["total"]))
             with col3:
-                st.metric("Status", o["status"].title())
+                st.metric("Status", status.title())
             with col4:
                 st.metric("Payment", o["payment_status"].title())
 
@@ -83,3 +107,19 @@ def render_customer_orders():
                 render_buyer_tracking(o["id"])
                 st.markdown("---")
                 render_invoice_button(o, user, seller)
+
+            # Once the order is delivered, show a rating widget for each
+            # product so the buyer can leave a verified review without
+            # navigating back to the product page.
+            if status == "delivered":
+                with st.expander(
+                    f"⭐ Rate products in this order ({len(items)})",
+                    expanded=False,
+                ):
+                    st.caption(
+                        "Your rating is linked to this order, so other buyers "
+                        "know it's from a verified customer."
+                    )
+                    for it in items:
+                        product = product_map.get(it.get("product_id")) if it.get("product_id") else None
+                        render_order_rating_widget(o, it, product, user)
