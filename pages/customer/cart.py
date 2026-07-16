@@ -89,6 +89,67 @@ def render_customer_cart():
                 )
                 return
 
+            # ---- ACTIVE DEBUG: verify JWT user matches session user ----
+            # The most common cause of the persistent 42501 RLS error is
+            # that ``st.session_state["user"]["id"]`` (which we use as
+            # buyer_id) does NOT match the user id encoded in the JWT
+            # (which PostgREST sees as ``auth.uid()``). When those two
+            # differ, the RLS WITH CHECK fails because
+            # auth.uid() != buyer_id. This happens when the user has
+            # signed in with one account but their session_state was
+            # populated with a different user's profile (e.g. from a
+            # previous login, or from a key rotation that changed the
+            # user id format). We diagnose this by decoding the JWT
+            # in Python and comparing.
+            with st.expander("🔍 Debug: verify your session", expanded=False):
+                import base64
+                import json as _json
+                try:
+                    parts = access_token.split(".")
+                    if len(parts) >= 2:
+                        # Pad base64 if needed
+                        pad = "=" * ((4 - len(parts[1]) % 4) % 4)
+                        payload = base64.urlsafe_b64decode(parts[1] + pad).decode("utf-8")
+                        jwt_claims = _json.loads(payload)
+                        jwt_sub = jwt_claims.get("sub", "(none)")
+                        jwt_email = jwt_claims.get("email", "(none)")
+                        jwt_role = jwt_claims.get("role", "(none)")
+                        jwt_exp = jwt_claims.get("exp", "(none)")
+                        session_uid = user.get("id", "(none)")
+                        session_email = user.get("email", "(none)")
+                        session_role = user.get("role", "(none)")
+
+                        st.markdown("**JWT (token) claims:**")
+                        st.code(
+                            f"sub (user id):  {jwt_sub}\n"
+                            f"email:          {jwt_email}\n"
+                            f"role:           {jwt_role}\n"
+                            f"exp (expiry):   {jwt_exp}\n"
+                        )
+                        st.markdown("**Session state (what the app uses):**")
+                        st.code(
+                            f"user.id:        {session_uid}\n"
+                            f"user.email:     {session_email}\n"
+                            f"user.role:      {session_role}\n"
+                        )
+                        if str(jwt_sub) == str(session_uid):
+                            st.success("✅ JWT sub matches session user.id — no session mismatch.")
+                        else:
+                            st.error(
+                                f"❌ **MISMATCH DETECTED!**\n\n"
+                                f"The JWT says you are user `{jwt_sub}` but the session "
+                                f"says you are user `{session_uid}`. The RLS policy "
+                                f"`auth.uid() = buyer_id` will ALWAYS fail when these "
+                                f"don't match.\n\n"
+                                f"**Fix:** Click the Logout button (in the sidebar), "
+                                f"then log in again. This will refresh both the JWT "
+                                f"and the session state to the same user."
+                            )
+                    else:
+                        st.warning("Could not parse JWT (malformed).")
+                except Exception as e:
+                    st.warning(f"Could not decode JWT: {e}")
+
             try:
                 # Use first product's producer as the seller (simplified)
                 first_product = cart_items[0]["products"]
@@ -171,18 +232,29 @@ def render_customer_cart():
                     st.error(
                         f"❌ **Order blocked by RLS policy**\n\n"
                         f"**What this means:** Supabase rejected the INSERT because "
-                        f"your user is not allowed to create orders in the database. "
-                        f"This is almost always one of these:\n\n"
-                        f"1. **The `migration_v7.sql` fix wasn't applied.** Run it in "
-                        f"Supabase SQL Editor — it tightens the RLS policies with "
-                        f"a NULL-safe `auth.uid()` check.\n\n"
-                        f"2. **Your JWT is malformed.** Try logging out and logging back in. "
-                        f"If you just rotated your Supabase keys, the JWT issuer may be "
-                        f"the old project.\n\n"
-                        f"3. **Your `profiles` row is missing.** Run "
-                        f"`supabase_sql/fix_signup_trigger.sql` to backfill any missing profiles.\n\n"
-                        f"**Diagnostic:** Run `supabase_sql/diagnose_rls.sql` in the "
-                        f"Supabase SQL Editor to find out exactly which check is failing.\n\n"
+                        f"the row-level security policy on the `orders` table didn't "
+                        f"match your user. The most common cause is that your JWT is "
+                        f"for a different user than the session in the app "
+                        f"(see the **🔍 Debug** expander above to check).\n\n"
+                        f"**Try these in order:**\n\n"
+                        f"1. **Logout and log back in.** This refreshes the JWT and "
+                        f"the session to the same user. The 90% fix.\n\n"
+                        f"2. **Hard-refresh the page** (Ctrl+Shift+R / Cmd+Shift+R) to "
+                        f"clear any stale Streamlit state.\n\n"
+                        f"3. **Re-run `migration_v6.sql`** if you haven't recently. "
+                        f"It has the NULL-safe `auth.uid() is not null` guard on the "
+                        f"orders INSERT policy.\n\n"
+                        f"4. **Verify the policy is actually applied.** In Supabase SQL "
+                        f"Editor, run:\n"
+                        f"```sql\n"
+                        f"select polname, polcmd from pg_policies\n"
+                        f"where tablename = 'orders' order by polname;\n"
+                        f"```\n"
+                        f"You should see 3 policies: 'Users see orders they "
+                        f"participate in' (SELECT), 'Authenticated users can create "
+                        f"orders' (INSERT), and 'Buyer/seller can update own orders' "
+                        f"(UPDATE). If you see only the old ones without "
+                        f"`auth.uid() is not null`, the migration didn't apply.\n\n"
                         f"Supabase response: `{err[:300]}`"
                     )
                 else:
