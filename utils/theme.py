@@ -293,18 +293,108 @@ _DARK_CSS = """<style>
     color: #e2e8f0 !important;
 }
 
-/* Headers */
-h1, h2, h3, h4, h5, h6 { color: #f8fafc !important; }
-.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span { color: #cbd5e1 !important; }
+/* Radio buttons (Navigation) — make highly visible */
+.stRadio > label,
+.stRadio > div[role="radiogroup"] label,
+[data-testid="stRadio"] label,
+[data-testid="stRadio"] > label {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+    font-size: 0.92rem !important;
+}
+[data-testid="stRadio"] > div[role="radiogroup"] > label {
+    color: #e2e8f0 !important;
+    font-weight: 600 !important;
+}
+/* Make the radio circle larger and the text bolder */
+[data-testid="stRadio"] p {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+    font-size: 0.92rem !important;
+}
 
-/* Form labels */
+/* Checkbox labels */
+.stCheckbox > label,
+[data-testid="stCheckbox"] label,
+[data-testid="stCheckbox"] p {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+}
+
+/* All form labels — bright and bold */
 .stTextArea > div > label,
 .stTextInput > div > label,
 .stNumberInput > div > label,
 .stSelectbox > div > label,
-.stCheckbox > label,
-.stRadio > label,
-.stFileUploader > div > label { color: #cbd5e1 !important; }
+.stFileUploader > div > label,
+.stSlider > div > label,
+.stMultiSelect > div > label,
+.stDateInput > div > label,
+.stTimeInput > div > label,
+.stRadio > label {
+    color: #f1f5f9 !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    text-transform: none !important;
+}
+
+/* Captions — bright but smaller */
+.stCaption, [data-testid="stCaptionContainer"] {
+    color: #cbd5e1 !important;
+    font-weight: 500 !important;
+}
+
+/* Markdown text — high contrast */
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span {
+    color: #e2e8f0 !important;
+    font-weight: 500 !important;
+}
+/* Strong/bold inside markdown */
+.stMarkdown strong, .stMarkdown b {
+    color: #f8fafc !important;
+    font-weight: 700 !important;
+}
+
+/* Text input / number input text — bright */
+.stTextInput input, .stNumberInput input {
+    color: #f8fafc !important;
+    font-weight: 500 !important;
+}
+
+/* Placeholder text in inputs */
+.stTextInput input::placeholder,
+.stTextArea textarea::placeholder,
+.stNumberInput input::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+}
+
+/* Selectbox / multiselect selected value */
+.stSelectbox [data-baseweb="select"] > div,
+.stMultiSelect [data-baseweb="select"] > div,
+[data-baseweb="select"] > div {
+    color: #f1f5f9 !important;
+    font-weight: 500 !important;
+}
+
+/* Sidebar nav headers */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] h4,
+[data-testid="stSidebar"] h5,
+[data-testid="stSidebar"] h6 {
+    color: #f8fafc !important;
+    font-weight: 700 !important;
+}
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label {
+    color: #e2e8f0 !important;
+}
 
 /* Captions */
 .stCaption { color: #94a3b8 !important; }
