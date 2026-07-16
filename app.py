@@ -460,13 +460,20 @@ def render_role_content(choice: str | None):
         if not verified and st.session_state.get("must_verify") and choice != "profile":
             st.info(
                 "🔐 **Welcome! Please verify your account** to unlock ordering, "
-                "messaging, and AI features. "
-                "[Verify now →]()"
+                "messaging, and AI features."
             )
             if st.button("🔐 Verify My Account", type="primary", key="banner_verify"):
                 st.session_state["force_nav"] = "profile"
                 st.rerun()
             st.markdown("---")
+
+        # NEW: If user just signed up AND the dashboard is the default page,
+        # auto-route them to the profile (where the verification form lives).
+        # This is the bulletproof fix: even if force_nav didn't take, we
+        # check the must_verify flag here.
+        if st.session_state.get("must_verify") and choice == "dashboard":
+            st.session_state["force_nav"] = "profile"
+            st.rerun()
 
         if not verified and choice not in ("marketplace", "profile"):
             _render_verification_gate()
