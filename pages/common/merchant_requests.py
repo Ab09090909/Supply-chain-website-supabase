@@ -20,7 +20,42 @@ from utils.db_health import is_table_available, render_db_health_warning
 
 
 def render_merchant_requests():
-    page_header("📨 Merchant Requests", "Review supply agreement requests from producers")
+    # Animated welcome banner
+    st.html("""
+    <div style='
+        background: linear-gradient(135deg, #0f3d23 0%, #1a5c2e 35%, #2d8a4e 70%, #34d399 100%);
+        background-size: 200% 200%;
+        animation: gradientShift 8s ease infinite;
+        border-radius: 18px;
+        padding: 24px 28px;
+        margin-bottom: 24px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(16, 185, 129, 0.2);
+    '>
+      <div style='
+        position: absolute; top: -40px; right: -20px;
+        width: 200px; height: 200px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+        animation: float 6s ease-in-out infinite;
+      '></div>
+      <div style='position: relative; z-index: 1;'>
+        <h1 style='
+            color: #ffffff;
+            font-size: 1.75rem;
+            font-weight: 800;
+            margin: 0 0 4px 0;
+            letter-spacing: -0.02em;
+        '>📨 Merchant Requests</h1>
+        <p style='
+            color: #d1fae5;
+            font-size: 0.9rem;
+            margin: 0;
+            font-weight: 500;
+        '>Review supply agreement requests from producers</p>
+      </div>
+    </div>
+    """)
 
     user = get_current_user()
     if not user:
@@ -63,18 +98,17 @@ def render_merchant_requests():
         st.info("No merchant requests yet. Producers can send you match requests from their AI Merchant Match tab.")
         return
 
-    # Summary
+    # Summary KPI cards (gradient style)
     pending = [r for r in requests if r["status"] == "pending"]
     confirmed = [r for r in requests if r["status"] == "confirmed"]
     cancelled = [r for r in requests if r["status"] == "cancelled"]
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("⏳ Pending", len(pending))
-    with col2:
-        st.metric("✅ Confirmed", len(confirmed))
-    with col3:
-        st.metric("❌ Cancelled", len(cancelled))
+    from utils.ui import kpi_dashboard
+    kpi_dashboard([
+        {"label": "Pending",   "value": str(len(pending)),   "icon": "⏳", "color": "amber"},
+        {"label": "Confirmed", "value": str(len(confirmed)), "icon": "✅", "color": "emerald"},
+        {"label": "Cancelled", "value": str(len(cancelled)), "icon": "❌", "color": "red"},
+    ])
 
     st.markdown("---")
 
