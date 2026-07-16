@@ -485,7 +485,203 @@ def render_producer_inventory():
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
+        # Show per-product order tracking on a separate row below the card
+        _render_product_tracking(client, user, p)
+
         st.html('<hr class="pi-divider" style="margin:10px 0 14px;"/>')
+
+
+# ---------------------------------------------------------------------------
+# Per-product order tracking
+# ---------------------------------------------------------------------------
+def _render_product_tracking(client, user: dict, product: dict) -> None:
+    """Show all orders for this specific product and let the producer
+    update the tracking status (Confirmed → Processing → Shipped → Delivered).
+
+    Rendered as a compact expander under each product card.
+    """
+    product_id = product.get("id")
+    if not product_id:
+        return
+
+    try:
+        # Find order_items that reference this product, joined with the
+        # order and the buyer profile.
+        items = (
+            client.table("order_items")
+            .select("id, order_id, sku, name, unit_price, quantity, "
+                    "orders!inner(id, order_number, status, payment_status, "
+                    "total, placed_at, confirmed_at, shipped_at, delivered_at, "
+                    "buyer:profiles!orders_buyer_id_fkey(full_name, email, phone, location))")
+            .eq("product_id", product_id)
+            .order("created_at", desc=True, foreign_table="orders")
+            .execute()
+        ).data or []
+    except Exception:
+        # Fallback: simpler query without the join if the FK relationship
+        # isn't detected (different schema versions)
+        try:
+            items = (
+                client.table("order_items")
+                .select("id, order_id, sku, name, unit_price, quantity")
+                .eq("product_id", product_id)
+                .execute()
+            ).data or []
+            # Hydrate with order data
+            for it in items:
+                if it.get("order_id"):
+                    try:
+                        o = client.table("orders").select(
+                            "id, order_number, status, payment_status, total, "
+                            "placed_at, confirmed_at, shipped_at, delivered_at"
+                        ).eq("id", it["order_id"]).maybe_single().execute()
+                        if o and o.data:
+                            it["orders"] = o.data
+                    except Exception:
+                        pass
+        except Exception:
+            items = []
+
+    if not items:
+        return  # No orders for this product yet — no UI noise
+
+    n_orders = len(items)
+    n_pending = sum(1 for it in items if (it.get("orders") or {}).get("status") in ("pending", "confirmed", "processing"))
+    n_shipped = sum(1 for it in items if (it.get("orders") or {}).get("status") == "shipped")
+
+    with st.expander(
+        f"📦 Orders & Tracking for this product — {n_orders} order"
+        f"{'s' if n_orders != 1 else ''} ({n_pending} active, {n_shipped} shipped)",
+        expanded=False,
+    ):
+        st.caption(
+            "Update the shipping status for orders containing this product. "
+            "Buyers see the same status in real-time."
+        )
+
+        for it in items:
+            order = it.get("orders") or {}
+            if not order:
+                continue
+            _render_single_order_tracking(client, user, product, it, order)
+
+
+def _render_single_order_tracking(client, user: dict, product: dict, item: dict, order: dict) -> None:
+    """Render one order row with inline status update controls."""
+    from utils.tracking import get_tracking, update_tracking, add_timeline_event
+
+    order_id   = order.get("id")
+    order_num  = order.get("order_number", "—")
+    status     = order.get("status", "pending")
+    qty        = int(item.get("quantity") or 0)
+    unit_price = float(item.get("unit_price") or 0)
+    buyer      = order.get("buyer") or {}
+    tracking   = get_tracking(order_id)
+
+    # Status color + emoji
+    status_colors = {
+        "pending":    ("#f59e0b", "⏳"),
+        "confirmed":  ("#10b981", "✅"),
+        "processing": ("#3b82f6", "🔄"),
+        "shipped":    ("#8b5cf6", "🚚"),
+        "delivered":  ("#059669", "📦"),
+        "cancelled":  ("#ef4444", "❌"),
+    }
+    color, emoji = status_colors.get(status, ("#64748b", "❓"))
+
+    buyer_name = buyer.get("full_name", "Unknown buyer")
+    buyer_loc  = buyer.get("location", "—")
+    placed     = (order.get("placed_at") or "")[:10] or "—"
+
+    with st.container(border=True):
+        # Header row
+        hcol1, hcol2 = st.columns([3, 1])
+        with hcol1:
+            st.markdown(
+                f"<div style='font-size:0.95rem; font-weight:700; color:#111827;'>"
+                f"🛒 {order_num}  <span style='color:{color}; font-size:0.8rem;'>"
+                f"{emoji} {status.upper()}</span></div>"
+                f"<div style='font-size:0.78rem; color:#64748b; margin-top:2px;'>"
+                f"👤 {buyer_name} &nbsp;·&nbsp; 📍 {buyer_loc} &nbsp;·&nbsp; 📅 {placed}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        with hcol2:
+            st.metric("Qty", qty, label_visibility="collapsed")
+
+        # Inline tracking info
+        if tracking:
+            tn   = tracking.get("tracking_number") or "—"
+            cr   = tracking.get("carrier") or "—"
+            eta  = tracking.get("estimated_delivery") or "—"
+            st.markdown(
+                f"<div style='font-size:0.78rem; color:#475569; margin:6px 0;'>"
+                f"🚚 <b>Tracking:</b> <code>{tn}</code> &nbsp;·&nbsp; "
+                f"📦 <b>Carrier:</b> {cr} &nbsp;·&nbsp; "
+                f"🗓️ <b>ETA:</b> {eta}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Inline status updater
+        next_status_map = {
+            "pending": "confirmed",
+            "confirmed": "processing",
+            "processing": "shipped",
+            "shipped": "delivered",
+        }
+        next_status = next_status_map.get(status)
+
+        scol1, scol2 = st.columns([2, 3])
+        with scol1:
+            if next_status:
+                labels = {
+                    "pending":    "✅ Accept Order",
+                    "confirmed":  "🔄 Start Processing",
+                    "processing": "🚚 Mark as Shipped",
+                    "shipped":    "📦 Mark as Delivered",
+                }
+                if st.button(labels[status], key=f"track_adv_{order_id}", type="primary", use_container_width=True):
+                    try:
+                        update_tracking(order_id, status=next_status)
+                        # Add a timeline event
+                        add_timeline_event(
+                            order_id,
+                            labels[status].split(" ", 1)[1] if " " in labels[status] else labels[status],
+                            f"Producer updated status to {next_status}",
+                        )
+                        st.success(f"✅ Updated to {next_status}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
+        with scol2:
+            with st.expander("✏️ Edit tracking details", expanded=False):
+                with st.form(f"track_form_{order_id}"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        new_tn = st.text_input("Tracking number", value=tracking.get("tracking_number") or "" if tracking else "", key=f"tn_{order_id}")
+                        new_cr = st.text_input("Carrier", value=tracking.get("carrier") or "" if tracking else "", key=f"cr_{order_id}")
+                    with col2:
+                        from datetime import date as _date
+                        try:
+                            eta_val = _date.fromisoformat(tracking["estimated_delivery"]) if tracking and tracking.get("estimated_delivery") else None
+                        except Exception:
+                            eta_val = None
+                        new_eta = st.date_input("ETA", value=eta_val, key=f"eta_{order_id}")
+                    new_notes = st.text_area("Notes", value=tracking.get("notes") or "" if tracking else "", key=f"notes_{order_id}")
+                    if st.form_submit_button("💾 Save tracking", type="primary"):
+                        try:
+                            update_tracking(
+                                order_id,
+                                tracking_number=new_tn,
+                                carrier=new_cr,
+                                estimated_delivery=new_eta.isoformat() if new_eta else None,
+                                notes=new_notes,
+                            )
+                            st.success("Saved!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -792,29 +988,3 @@ def _render_edit_product(client, user: dict, product_id: str) -> None:
                             "of this product and that you're logged in. Try logging "
                             "out and back in."
                         )
-                    else:
-                        st.error(f"Failed to save changes: {e}")
-
-    # ── Delete button (outside the form, since it doesn't need validation) ──
-    st.html('<hr class="pi-divider"/>')
-    st.markdown("#### 🗑️ Delete this product")
-    st.caption(
-        "Deletion is permanent. If this product has been ordered before, "
-        "the deletion will fail and you should set its status to **inactive** instead."
-    )
-    if st.button("🗑️ Delete product permanently", type="primary", key=f"edit_delete_{product_id}"):
-        try:
-            client.table("products").delete().eq("id", product_id).execute()
-            st.success("✅ Product deleted.")
-            st.session_state.pop("editing_product", None)
-            st.rerun()
-        except Exception as e:
-            err = str(e).lower()
-            if "foreign key" in err or "violates" in err or "restrict" in err:
-                st.error(
-                    "❌ Cannot delete this product because it is referenced by "
-                    "existing orders. Set its status to **inactive** instead to "
-                    f"hide it from the marketplace. Detail: {e}"
-                )
-            else:
-                st.error(f"Failed to delete: {e}")
