@@ -157,7 +157,11 @@ def _metric_box(value: str, label: str, icon: str = "", alert: bool = False) -> 
 
 
 def _card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
-    st.markdown(
+    # Use the project's _html() helper so the multi-line HTML is rendered
+    # as raw HTML and never as a Markdown code block (which would show
+    # the raw <div> tags on the page).
+    from utils.ui import _html
+    _html(
         f"""
         <div class="dash-card">
           <div class="dash-card-header">
@@ -173,8 +177,7 @@ def _card(icon: str, title: str, subtitle: str, metrics_html: str) -> None:
             </div>
           </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -195,7 +198,8 @@ def render_producer_dashboard():
     else:
         greeting, emoji = "Good evening", "🌙"
 
-    st.html(f"""
+    from utils.ui import _html
+    _html(f"""
     <div style='
         background: linear-gradient(135deg, #0f3d23 0%, #1a5c2e 35%, #2d8a4e 70%, #34d399 100%);
         background-size: 200% 200%;
