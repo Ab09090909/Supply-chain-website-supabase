@@ -1,0 +1,360 @@
+"""
+Render the digital business card to a PNG image using Pillow (PIL).
+
+This is the "offline" renderer — no headless browser, no external
+service. We use Pillow's ``ImageDraw`` to paint the card on a 1080x540
+canvas (matching the 2:1 aspect ratio of the user's reference design),
+then return the PNG bytes for download.
+
+Why Pillow instead of HTML-to-image?
+  * No system dependencies (no Chromium, no GTK)
+  * Fast — runs in milliseconds
+  * Works identically on Streamlit Cloud, local Linux/macOS/Windows
+  * The user said "offline" — Pillow is purely offline
+  * Smaller dependency footprint (just Pillow, which is already pulled
+    in by qrcode[pil] anyway)
+"""
+from __future__ import annotations
+
+import io
+from typing import Optional
+
+# Pillow is part of the `qrcode[pil]` extra we add in requirements.txt
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
+    _PIL_OK = True
+except Exception:
+    _PIL_OK = False
+
+
+# -----------------------------------------------------------------------
+# Font loading — try a few common paths so the card looks good on
+# any OS (Linux, macOS, Windows)
+# -----------------------------------------------------------------------
+_FONT_REGULAR_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/Library/Fonts/Georgia.ttf",
+    "C:/Windows/Fonts/georgia.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+
+_FONT_BOLD_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+    "/Library/Fonts/Georgia Bold.ttf",
+    "C:/Windows/Fonts/georgiab.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+]
+
+
+def _find_font(candidates, size: int):
+    """Return the first existing font in ``candidates``, scaled to ``size``."""
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    # Fallback: Pillow's tiny default font (won't look great but won't crash)
+    return ImageFont.load_default()
+
+
+def _wrap_text(draw, text: str, font, max_width: int) -> list:
+    """Wrap text to fit within ``max_width`` pixels using the given font."""
+    if not text:
+        return []
+    words = text.split()
+    lines, current = [], ""
+    for w in words:
+        trial = (current + " " + w).strip() if current else w
+        bbox = draw.textbbox((0, 0), trial, font=font)
+        if (bbox[2] - bbox[0]) <= max_width:
+            current = trial
+        else:
+            if current:
+                lines.append(current)
+            if draw.textbbox((0, 0), w, font=font)[2] > max_width:
+                chunk = ""
+                for ch in w:
+                    if draw.textbbox((0, 0), chunk + ch, font=font)[2] > max_width and chunk:
+                        lines.append(chunk)
+                        chunk = ch
+                    else:
+                        chunk += ch
+                current = chunk
+            else:
+                current = w
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _fetch_avatar_bytes(url: str) -> Optional[bytes]:
+    """Best-effort fetch of the avatar image. Returns None on any failure."""
+    if not url:
+        return None
+    try:
+        import requests
+        r = requests.get(url, timeout=4)
+        if r.ok and r.content:
+            return r.content
+    except Exception:
+        pass
+    return None
+
+
+# -----------------------------------------------------------------------
+# Geometric icons — Pillow fonts don't include emoji glyphs, so we draw
+# simple shapes (circles, rectangles, polygons) for each contact field.
+# -----------------------------------------------------------------------
+def _draw_icon(draw, x, y, kind, size=18, color=(75, 85, 99)):
+    """Draw a small monochrome icon at (x, y) using geometric shapes.
+
+    The default Pillow fonts don't include emoji glyphs, so we draw
+    simple geometric icons instead. Supported kinds:
+      * "home"      — house outline
+      * "phone"     — rounded handset
+      * "email"     — envelope
+      * "instagram" — camera outline (rounded square + lens)
+      * "facebook"  — circle with a stylized "f"
+    """
+    if kind == "home":
+        # Roof: triangle
+        draw.polygon(
+            [(x, y + size // 2), (x + size // 2, y), (x + size, y + size // 2)],
+            outline=color, width=2,
+        )
+        # Body: rectangle
+        draw.rectangle(
+            [x + size // 6, y + size // 2, x + size - size // 6, y + size],
+            outline=color, width=2,
+        )
+    elif kind == "phone":
+        # Handset: rounded rectangle
+        draw.rounded_rectangle(
+            [x, y + 2, x + size - 2, y + size - 2],
+            radius=4, outline=color, width=2,
+        )
+    elif kind == "email":
+        # Envelope body
+        draw.rectangle(
+            [x, y + 2, x + size, y + size - 2],
+            outline=color, width=2,
+        )
+        # Flap
+        draw.line(
+            [(x, y + 2), (x + size // 2, y + size // 2), (x + size, y + 2)],
+            fill=color, width=2,
+        )
+    elif kind == "instagram":
+        # Rounded square (camera body)
+        draw.rounded_rectangle(
+            [x, y, x + size, y + size],
+            radius=4, outline=color, width=2,
+        )
+        # Lens
+        draw.ellipse(
+            [x + size // 4, y + size // 4, x + 3 * size // 4, y + 3 * size // 4],
+            outline=color, width=2,
+        )
+        # Flash dot
+        draw.ellipse(
+            [x + 3 * size // 4 - 2, y + 2, x + 3 * size // 4 + 2, y + 6],
+            fill=color,
+        )
+    elif kind == "facebook":
+        # Circle
+        draw.ellipse(
+            [x, y, x + size, y + size],
+            outline=color, width=2,
+        )
+        # Stylized "f"
+        f_x = x + size * 0.55
+        f_y = y + size * 0.20
+        draw.line([(f_x, f_y), (f_x, y + size * 0.85)], fill=color, width=2)
+        draw.line(
+            [(x + size * 0.35, y + size * 0.45), (f_x + 4, y + size * 0.45)],
+            fill=color, width=2,
+        )
+
+
+# -----------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------
+def render_card_to_png(user: dict, width: int = 1080, height: int = 540) -> Optional[bytes]:
+    """Render the business card to a PNG byte string.
+
+    Returns ``None`` if Pillow isn't installed (so the caller can hide
+    the download button gracefully).
+    """
+    if not _PIL_OK:
+        return None
+
+    # Card canvas (2:1 aspect ratio like the reference)
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+
+    # Subtle paper texture — faint horizontal banding for warmth
+    texture = Image.new("RGB", (width, height), (252, 250, 246))
+    for y in range(height):
+        v = 248 + (y % 2) * 2
+        for x in range(0, width, 8):
+            for dx in range(min(8, width - x)):
+                texture.putpixel((x + dx, y), (v, v - 2, v - 4))
+
+    # Vignette: darken the edges slightly
+    vignette = Image.new("L", (width, height), 0)
+    vd = ImageDraw.Draw(vignette)
+    vd.rectangle((0, 0, width, height), fill=80)
+    vd.rectangle((40, 40, width - 40, height - 40), fill=140)
+    vd.rectangle((80, 80, width - 80, height - 80), fill=220)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(40))
+    img = Image.composite(img, texture, vignette)
+
+    draw = ImageDraw.Draw(img)
+
+    # ── Fonts ──────────────────────────────────────────────
+    f_name      = _find_font(_FONT_BOLD_CANDIDATES,    34)
+    f_title     = _find_font(_FONT_REGULAR_CANDIDATES, 16)
+    f_body      = _find_font(_FONT_REGULAR_CANDIDATES, 20)
+    f_body_bold = _find_font(_FONT_BOLD_CANDIDATES,    20)
+    f_body_sm   = _find_font(_FONT_REGULAR_CANDIDATES, 17)
+
+    # ── User data ──────────────────────────────────────────
+    name      = (user.get("full_name") or "Your Name").strip()
+    role      = (user.get("role") or "").strip().capitalize()
+    company   = (user.get("company") or "Independent").strip()
+    title     = (user.get("title") or role or "Member").strip()
+    phone     = (user.get("phone") or "—").strip()
+    email     = (user.get("email") or "—").strip()
+    location  = (user.get("location") or "—").strip()
+    instagram = (user.get("instagram") or "").strip()
+    facebook  = (user.get("facebook") or "").strip()
+    avatar    = (user.get("avatar_url") or "").strip()
+
+    # ── Layout: 3 columns ────────────────────────────────
+    margin = 50
+    col_avatar_x = margin
+    col_avatar_w = 260
+    col_divider_x = col_avatar_x + col_avatar_w + 24
+    col_info_x = col_divider_x + 24
+    col_info_w = width - col_info_x - margin
+
+    # ── Avatar ─────────────────────────────────────────────
+    avatar_size = 200
+    avatar_y = (height - avatar_size) // 2 - 30
+    avatar_box = (col_avatar_x + 60, avatar_y, col_avatar_x + 60 + avatar_size, avatar_y + avatar_size)
+    initials = "".join((p[:1] for p in name.split()[:2])).upper() or "?"
+
+    # Try to load the real avatar
+    avatar_img = None
+    if avatar:
+        raw = _fetch_avatar_bytes(avatar)
+        if raw:
+            try:
+                avatar_img = Image.open(io.BytesIO(raw)).convert("RGB")
+            except Exception:
+                avatar_img = None
+
+    if avatar_img is not None:
+        # Resize + circular crop
+        avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.LANCZOS)
+        mask = Image.new("L", (avatar_size, avatar_size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, avatar_size - 1, avatar_size - 1), fill=255)
+        # Light border
+        bordered = Image.new("RGB", (avatar_size + 6, avatar_size + 6), (212, 212, 212))
+        bordered.paste(avatar_img, (3, 3), mask)
+        img.paste(bordered, avatar_box[:2])
+    else:
+        # Initials placeholder with emerald gradient
+        placeholder = Image.new("RGB", (avatar_size, avatar_size), (16, 185, 129))
+        pd = ImageDraw.Draw(placeholder)
+        # Fake gradient by overlaying progressively larger circles
+        for i in range(8):
+            pd.ellipse(
+                (avatar_size - 80 - i * 4, avatar_size - 80 - i * 4,
+                 avatar_size + 80 + i * 4, avatar_size + 80 + i * 4),
+                fill=(4, 120, 87),
+            )
+        # Border
+        bd = Image.new("RGB", (avatar_size + 6, avatar_size + 6), (212, 212, 212))
+        bd.paste(placeholder, (3, 3))
+        m = Image.new("L", (avatar_size + 6, avatar_size + 6), 0)
+        ImageDraw.Draw(m).ellipse((0, 0, avatar_size + 5, avatar_size + 5), fill=255)
+        img.paste(bd, avatar_box[:2], m)
+        # Initials text
+        f_init = _find_font(_FONT_BOLD_CANDIDATES, 78)
+        bbox = draw.textbbox((0, 0), initials, font=f_init)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text(
+            (avatar_box[0] + 3 + (avatar_size + 6 - tw) // 2 - bbox[0],
+             avatar_box[1] + 3 + (avatar_size + 6 - th) // 2 - bbox[1]),
+            initials, font=f_init, fill=(255, 255, 255),
+        )
+
+    # ── Name + title (below avatar, centered) ─────────────
+    name_y = avatar_box[3] + 16
+    name_bbox = draw.textbbox((0, 0), name.upper(), font=f_name)
+    name_w = name_bbox[2] - name_bbox[0]
+    name_x = avatar_box[0] + 3 + (avatar_size + 6 - name_w) // 2
+    draw.text((name_x, name_y), name.upper(), font=f_name, fill=(15, 23, 42))
+
+    title_y = name_y + 42
+    title_bbox = draw.textbbox((0, 0), title.upper(), font=f_title)
+    title_w = title_bbox[2] - title_bbox[0]
+    title_x = avatar_box[0] + 3 + (avatar_size + 6 - title_w) // 2
+    draw.text((title_x, title_y), title.upper(), font=f_title, fill=(107, 114, 128))
+
+    # ── Divider line ──────────────────────────────────────
+    div_top = margin + 30
+    div_bot = height - margin - 30
+    # Solid divider (the reference image has a thin grey line)
+    draw.line(
+        [(col_divider_x, div_top), (col_divider_x, div_bot)],
+        fill=(203, 213, 225), width=1,
+    )
+
+    # ── Contact info (right column) ───────────────────────
+    info_x = col_info_x
+    info_y_start = margin + 50
+    icon_size = 22
+    icon_gap = 16
+
+    def _draw_row(y, kind, text, font, fill=(31, 41, 55)):
+        """Draw one contact row: icon + text (wrapped). Returns the height used."""
+        _draw_icon(draw, info_x, y, kind, size=icon_size, color=(75, 85, 99))
+        text_x = info_x + icon_size + icon_gap
+        max_text_w = col_info_w - icon_size - icon_gap
+        lines = _wrap_text(draw, text, font, max_text_w)
+        for li, line in enumerate(lines):
+            draw.text((text_x, y + 2 + li * 24), line, font=font, fill=fill)
+        return max(icon_size, len(lines) * 24 + 4)
+
+    y = info_y_start
+    y += _draw_row(y, "home", location.upper(), f_body_bold)
+    y += 14
+    y += _draw_row(y, "phone", phone, f_body_bold)
+    y += 14
+    y += _draw_row(y, "email", email, f_body_sm, fill=(31, 41, 55))
+    if instagram:
+        ig = (instagram.lstrip("@")
+                       .replace("https://instagram.com/", "")
+                       .replace("http://instagram.com/", ""))
+        y += 14 + _draw_row(y, "instagram", ig.upper(), f_body_bold)
+    if facebook:
+        fb = (facebook.lstrip("@")
+                       .replace("https://facebook.com/", "")
+                       .replace("https://www.facebook.com/", "")
+                       .replace("http://facebook.com/", ""))
+        y += 14 + _draw_row(y, "facebook", fb.upper(), f_body_bold)
+
+    # ── Save and return ──────────────────────────────────
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", quality=95)
+    return buf.getvalue()
