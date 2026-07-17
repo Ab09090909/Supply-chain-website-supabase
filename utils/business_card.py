@@ -5,17 +5,33 @@ Renders a beautiful digital business card (matching the design from
 the user's reference image) and generates a downloadable QR code that,
 when scanned, opens the user's contact info on the scanner's phone.
 
+Layout
+------
+The card matches the user's reference design:
+    ┌──────────────────────────────────────────────────────┐
+    │     ┌─────────┐     │   ABRAHAM SMITH               │
+    │     │         │     │                               │
+    │     │   QR    │     │   SENIOR PRODUCER              │
+    │     │         │     │                               │
+    │     └─────────┘     │   🏠  12 Your Business Road  │
+    │                     │   📞  +251 911 123 456        │
+    │      ABRAHAM SMITH   │   ✉️  abraham@gmail.com       │
+    │                      │   📷  ABRAHAM                │
+    │                      │   📘  ABRAHAM.SMITH           │
+    └──────────────────────────────────────────────────────┘
+
+The QR code is on the LEFT (the main feature), contact details on the
+RIGHT. When scanned with a phone camera, the QR imports the contact
+into the phone's address book.
+
 Features
 --------
-* Beautiful HTML business card with round profile photo, name, title,
-  and contact details (address, phone, email, social media).
 * QR code is generated locally (no network call) and encoded as a
   vCard so most phones automatically offer to "Add to Contacts" on scan.
 * Both the QR code and the full business card can be downloaded as
   PNG files — fully offline.
-* The QR code uses the high error-correction level so it works even
-  when printed small or partially obscured.
-* A "Print" view is also provided via a separate download button.
+* The QR code uses the high error-correction level (30%) so it works
+  even when printed small or partially obscured.
 
 Usage
 -----
@@ -27,32 +43,10 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import re
-from typing import Dict, Optional
+from typing import Optional
 
 import streamlit as st
-
-from utils.ui import _html
-
-
-# Lazy-import qrcode so the module loads even if qrcode isn't installed.
-# We show a friendly warning if the user tries to generate a QR code
-# without the library available.
-def _get_qr_lib():
-    try:
-        import qrcode
-        from qrcode.image.pure import PyPNGImage
-        # Return a factory that builds a PNG image
-        return qrcode, PyPNGImage
-    except ImportError:
-        return None, None
-
-
-def _safe_filename(text: str) -> str:
-    """Turn a user-provided name into something safe for a filename."""
-    s = re.sub(r"[^A-Za-z0-9_-]+", "_", (text or "user").strip())
-    return s.strip("_") or "user"
 
 
 # -----------------------------------------------------------------------
@@ -99,7 +93,6 @@ def build_vcard(user: dict) -> str:
     if website:
         lines.append(f"URL:{website}")
     if instagram:
-        # Store as URL so phones link to the profile
         ig = instagram if instagram.startswith("http") else f"https://instagram.com/{instagram.lstrip('@')}"
         lines.append(f"URL;TYPE=Instagram:{ig}")
     if facebook:
@@ -112,153 +105,153 @@ def build_vcard(user: dict) -> str:
 # -----------------------------------------------------------------------
 # QR code generation
 # -----------------------------------------------------------------------
-def make_qr_png(data: str, size: int = 12, border: int = 2) -> Optional[bytes]:
+def _make_qr_image(data: str, size: int = 12, border: int = 2):
+    """Generate a QR code as a PIL Image. Returns None if qrcode isn't installed.
+
+    We always use the PIL image factory (qrcode.image.pil.PilImage) so we
+    don't need a separate pypng dependency. If qrcode[pil] is installed
+    (which pulls in Pillow automatically), this will work.
+    """
+    try:
+        import qrcode
+        from qrcode.image.pil import PilImage
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            box_size=size,
+            border=border,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white", image_factory=PilImage)
+        return img
+    except Exception:
+        return None
+
+
+def make_qr_png(data: str, size: int = 10, border: int = 2) -> Optional[bytes]:
     """Generate a QR code as PNG bytes. Returns None if qrcode isn't installed.
 
     Args:
         data:   the string to encode (usually a vCard)
-        size:   pixel size of each "module" (square). The final image
-                will be roughly ``size * len_modules`` pixels wide.
-        border: number of white modules around the edge.
+        size:   pixel size of each "module" (square)
+        border: number of white modules around the edge
     """
-    qrcode, image_factory = _get_qr_lib()
-    if qrcode is None:
+    img = _make_qr_image(data, size=size, border=border)
+    if img is None:
         return None
-    qr = qrcode.QRCode(
-        version=None,                       # auto-detect smallest version
-        error_correction=qrcode.constants.ERROR_CORRECT_H,  # 30% — robust
-        box_size=size,
-        border=border,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white", image_factory=image_factory)
-    # Different image factories expose different save APIs:
-    #  * PyPNGImage.save(path)         — needs a file path
-    #  * PIL.Image.save(buf, format=…)  — needs a buffer + format
-    # We unify by detecting the type and using the right call.
+    # Convert to bytes
     buf = io.BytesIO()
     try:
-        # PIL-backed image (image_factory returned a PIL Image)
         img.save(buf, format="PNG")
-    except TypeError:
-        # PyPNGImage — save to a temp file, then read back
+    except Exception:
+        # If image is not a PIL Image, try saving to a temp file
         import tempfile, os
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
-            tmp_path = tf.name
+            tmp = tf.name
         try:
-            img.save(tmp_path)
-            with open(tmp_path, "rb") as f:
+            img.save(tmp)
+            with open(tmp, "rb") as f:
                 buf.write(f.read())
         finally:
-            try: os.unlink(tmp_path)
+            try: os.unlink(tmp)
             except Exception: pass
     return buf.getvalue()
 
 
 # -----------------------------------------------------------------------
-# Business card HTML — looks like the user's reference image
+# Inline card preview — shown above the download buttons
 # -----------------------------------------------------------------------
-def _build_card_html(user: dict) -> str:
-    """Build the HTML for the digital business card."""
+def _build_card_preview_html(qr_png_b64: str, user: dict) -> str:
+    """Build an HTML preview of the business card, matching the user's
+    reference design. The QR is shown on the LEFT, contact info on the RIGHT.
+    """
     name = user.get("full_name") or "Your Name"
     role = (user.get("role") or "").strip().capitalize()
-    company = user.get("company") or "Independent"
     title = user.get("title") or role or "Member"
     phone = user.get("phone") or "—"
     email = user.get("email") or "—"
     location = user.get("location") or "—"
     instagram = user.get("instagram") or ""
     facebook = user.get("facebook") or ""
-    avatar = user.get("avatar_url") or ""
 
-    # Build initials for the fallback avatar
-    parts = name.split()
-    initials = (parts[0][:1] + (parts[1][:1] if len(parts) > 1 else "")).upper() or "?"
-
-    if avatar:
-        avatar_html = (
-            f'<img src="{avatar}" '
-            f'style="width:130px;height:130px;border-radius:50%;object-fit:cover;'
-            f'border:3px solid #d4d4d4;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />'
-        )
+    if qr_png_b64:
+        qr_html = f'<img src="data:image/png;base64,{qr_png_b64}" style="width:200px;height:200px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />'
     else:
-        avatar_html = (
-            f'<div style="width:130px;height:130px;border-radius:50%;'
-            f'background:linear-gradient(135deg,#10b981 0%,#047857 100%);'
-            f'display:flex;align-items:center;justify-content:center;'
-            f'color:#fff;font-weight:700;font-size:2.4rem;font-family:Georgia,serif;'
-            f'border:3px solid #d4d4d4;box-shadow:0 4px 12px rgba(0,0,0,0.1);">{initials}</div>'
-        )
+        qr_html = '<div style="width:200px;height:200px;border-radius:8px;background:#fee2e2;display:flex;align-items:center;justify-content:center;color:#991b1b;font-size:0.8rem;text-align:center;padding:8px;">QR unavailable<br>install qrcode</div>'
 
-    # Social links
     social_rows = ""
     if instagram:
-        ig = instagram if instagram.startswith("http") else f"https://instagram.com/{instagram.lstrip('@')}"
+        ig = instagram.lstrip("@")
         social_rows += f"""
-        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;font-size:0.85rem;color:#1f2937;">
-            <span style="font-size:1.15rem;">📷</span>
-            <span style="text-transform:uppercase;letter-spacing:0.04em;font-weight:500;">{instagram.lstrip('@').replace('https://instagram.com/','')}</span>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:0.85rem;color:#1f2937;">
+            <span style="font-size:1.05rem;">📷</span>
+            <span style="text-transform:uppercase;letter-spacing:0.04em;font-weight:500;">{ig}</span>
         </div>"""
     if facebook:
-        fb = facebook if facebook.startswith("http") else f"https://facebook.com/{facebook.lstrip('@')}"
-        fb_display = facebook.lstrip('@').replace('https://facebook.com/','').replace('https://www.facebook.com/','')
+        fb = facebook.lstrip("@")
         social_rows += f"""
-        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;font-size:0.85rem;color:#1f2937;">
-            <span style="font-size:1.15rem;">📘</span>
-            <span style="text-transform:uppercase;letter-spacing:0.04em;font-weight:500;">{fb_display}</span>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:0.85rem;color:#1f2937;">
+            <span style="font-size:1.05rem;">📘</span>
+            <span style="text-transform:uppercase;letter-spacing:0.04em;font-weight:500;">{fb}</span>
         </div>"""
 
-    card_html = f"""
+    return f"""
     <div style="
-        max-width: 540px;
+        max-width: 580px;
         margin: 1rem auto;
         background: #ffffff;
         border-radius: 12px;
         box-shadow: 0 8px 28px rgba(0,0,0,0.12);
-        padding: 28px 32px;
+        padding: 24px 28px;
         display: grid;
         grid-template-columns: auto 1px 1fr;
-        gap: 24px;
+        gap: 22px;
         align-items: center;
-        font-family: 'Georgia', 'Times New Roman', serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     ">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;min-width:140px;">
-            {avatar_html}
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;min-width:200px;">
+            {qr_html}
+            <div style="background:#10b981;color:white;font-size:0.6rem;font-weight:700;letter-spacing:0.06em;padding:3px 10px;border-radius:10px;margin-top:-4px;">SCAN TO SAVE</div>
             <div style="text-align:center;margin-top:8px;">
-                <div style="font-size:1.35rem;font-weight:700;color:#0f172a;letter-spacing:0.05em;text-transform:uppercase;">{name}</div>
-                <div style="font-size:0.78rem;color:#6b7280;letter-spacing:0.18em;text-transform:uppercase;margin-top:4px;">{title or role or 'Member'}</div>
+                <div style="font-size:1.1rem;font-weight:700;color:#0f172a;letter-spacing:0.05em;text-transform:uppercase;">{name}</div>
+                <div style="font-size:0.7rem;color:#6b7280;letter-spacing:0.18em;text-transform:uppercase;margin-top:3px;">{title or role or 'Member'}</div>
             </div>
         </div>
         <div style="width:1px;align-self:stretch;background:linear-gradient(180deg,transparent 0%,#cbd5e1 20%,#cbd5e1 80%,transparent 100%);"></div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-            <div style="display:flex;align-items:flex-start;gap:12px;font-size:0.92rem;color:#1f2937;">
-                <span style="font-size:1.1rem;line-height:1.2;">🏠</span>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;align-items:flex-start;gap:10px;font-size:0.88rem;color:#1f2937;">
+                <span style="font-size:1rem;line-height:1.2;">🏠</span>
                 <span style="text-transform:uppercase;letter-spacing:0.03em;font-weight:500;line-height:1.35;">{location}</span>
             </div>
-            <div style="display:flex;align-items:center;gap:12px;margin-top:6px;font-size:0.92rem;color:#1f2937;">
-                <span style="font-size:1.1rem;">📞</span>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:4px;font-size:0.88rem;color:#1f2937;">
+                <span style="font-size:1rem;">📞</span>
                 <span style="font-weight:500;">{phone}</span>
             </div>
-            <div style="display:flex;align-items:center;gap:12px;margin-top:6px;font-size:0.85rem;color:#1f2937;word-break:break-all;">
-                <span style="font-size:1.1rem;">✉️</span>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:4px;font-size:0.8rem;color:#1f2937;word-break:break-all;">
+                <span style="font-size:1rem;">✉️</span>
                 <span style="text-transform:lowercase;font-weight:500;">{email}</span>
             </div>
             {social_rows}
         </div>
     </div>
     """
-    return card_html
 
 
 # -----------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------
+def _safe_filename(text: str) -> str:
+    """Turn a user-provided name into something safe for a filename."""
+    s = re.sub(r"[^A-Za-z0-9_-]+", "_", (text or "user").strip())
+    return s.strip("_") or "user"
+
+
 def render_business_card(user: dict) -> None:
     """Render the business card UI + QR code + download buttons.
 
     The user can:
-      * See their beautiful digital business card
+      * See their digital business card (with QR on the left)
       * Download the card as a PNG image
       * Download the QR code as a PNG image
       * Customize the social-media fields shown on the card
@@ -274,17 +267,32 @@ def render_business_card(user: dict) -> None:
     # don't exist in the profile by default, so we let the user add them).
     _render_social_inputs(user)
 
-    # Refresh user dict with the social fields the user just typed in
-    # (so the QR / card reflect them immediately without a DB round-trip).
+    # Build the vCard once, then use it for both the preview and the QR
     user_for_display = dict(user)
     user_for_display["instagram"] = st.session_state.get("bc_instagram", user.get("instagram") or "")
     user_for_display["facebook"]   = st.session_state.get("bc_facebook",   user.get("facebook")   or "")
 
-    # Render the card
-    _html(_build_card_html(user_for_display))
+    vcard_str = build_vcard(user_for_display)
+    qr_bytes = make_qr_png(vcard_str, size=10, border=2)
 
-    # Download + QR section
-    _render_downloads(user_for_display)
+    # Render the card preview (HTML with embedded QR)
+    if qr_bytes:
+        qr_b64 = base64.b64encode(qr_bytes).decode()
+    else:
+        qr_b64 = ""
+
+    from utils.ui import _html
+    _html(_build_card_preview_html(qr_b64, user_for_display))
+
+    # Show a warning if the QR couldn't be generated
+    if not qr_bytes:
+        st.warning(
+            "⚠️ QR code generation is unavailable. "
+            "Add `qrcode` and `Pillow` to requirements.txt and restart the app."
+        )
+
+    # Download buttons
+    _render_downloads(user_for_display, vcard_str, qr_bytes)
 
 
 def _render_social_inputs(user: dict) -> None:
@@ -325,24 +333,31 @@ def _sync_social_inputs() -> None:
     st.session_state["bc_facebook"]   = st.session_state.get("_bc_fb_input", "")
 
 
-def _render_downloads(user: dict) -> None:
-    """Render the download buttons: card PNG + QR code PNG."""
+def _render_downloads(user: dict, vcard_str: str, qr_bytes: Optional[bytes]) -> None:
+    """Render the download buttons: card PNG + QR code PNG.
+
+    Both are best-effort — if Pillow or qrcode aren't available, the
+    corresponding button is disabled (and a warning is already shown
+    above). The .vcf download always works (no deps needed).
+    """
     st.markdown("")
     c1, c2, c3 = st.columns(3)
 
-    # 1. Card PNG
+    safe_name = _safe_filename(user.get("full_name", ""))
+
+    # 1. Card PNG (uses PIL)
     with c1:
+        png_bytes = None
         try:
             from utils.card_image import render_card_to_png
-            vcard_str = build_vcard(user_for_display)
-            png_bytes = render_card_to_png(user_for_display, vcard=vcard_str)
+            png_bytes = render_card_to_png(user, vcard=vcard_str)
         except Exception:
             png_bytes = None
         if png_bytes:
             st.download_button(
                 label="⬇️ Download Card (PNG)",
                 data=png_bytes,
-                file_name=f"business_card_{_safe_filename(user.get('full_name', ''))}.png",
+                file_name=f"business_card_{safe_name}.png",
                 mime="image/png",
                 use_container_width=True,
                 help="Download the digital business card as a PNG image.",
@@ -352,45 +367,39 @@ def _render_downloads(user: dict) -> None:
                 "⬇️ Download Card (PNG)",
                 disabled=True,
                 use_container_width=True,
-                help="Card image generation is unavailable.",
+                help="Pillow isn't installed. Add it to requirements.txt.",
             )
 
     # 2. QR code PNG
-    vcard = build_vcard(user)
-    qr_bytes = make_qr_png(vcard, size=10, border=2)
     with c2:
         if qr_bytes:
             st.download_button(
-                label="⬇️ Download QR Code (PNG)",
+                label="⬇️ Download QR (PNG)",
                 data=qr_bytes,
-                file_name=f"contact_qr_{_safe_filename(user.get('full_name', ''))}.png",
+                file_name=f"contact_qr_{safe_name}.png",
                 mime="image/png",
                 use_container_width=True,
                 help="Download the QR code that encodes your contact info.",
             )
         else:
             st.button(
-                "⬇️ Download QR Code (PNG)",
+                "⬇️ Download QR (PNG)",
                 disabled=True,
                 use_container_width=True,
-                help="Add `qrcode[pil]` to requirements.txt to enable QR codes.",
+                help="qrcode isn't installed. Add it to requirements.txt.",
             )
 
-    # 3. Show QR inline
+    # 3. vCard file (always works — no deps)
     with c3:
-        if qr_bytes:
-            st.markdown(
-                f"""
-                <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-                    <img src="data:image/png;base64,{base64.b64encode(qr_bytes).decode()}"
-                         style="width:88px;height:88px;border:1px solid #e2e8f0;border-radius:6px;" />
-                    <span style="font-size:0.65rem;color:#64748b;">Scan to save contact</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.warning("📦 `qrcode[pil]` not installed. Add it to `requirements.txt` to enable QR codes.")
+        vcf_bytes = vcard_str.encode("utf-8")
+        st.download_button(
+            label="⬇️ Download vCard (.vcf)",
+            data=vcf_bytes,
+            file_name=f"contact_{safe_name}.vcf",
+            mime="text/vcard",
+            use_container_width=True,
+            help="Download a .vcf file you can import into any contacts app.",
+        )
 
 
 # -----------------------------------------------------------------------
