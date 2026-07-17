@@ -432,11 +432,13 @@ def render_card_to_png(
         return max(icon_size, len(lines) * 20 + 4)
 
     rows = []
-    # Address (multi-line ok)
+    # Address (uppercase — addresses are conventionally all-caps on cards)
     if location and location != "—":
         rows.append(("home", location.upper(), f_body_bold))
+    # Phone — keep as typed (so any extension letters or formatting stay readable)
     if phone and phone != "—":
         rows.append(("phone", phone, f_body_bold))
+    # Email — keep as typed (so @ and . stay where the user put them)
     if email and email != "—":
         rows.append(("email", email, f_body))
     if instagram:
@@ -445,7 +447,7 @@ def render_card_to_png(
                        .replace("http://instagram.com/", "")
                        .replace("instagram.com/", ""))
         if ig:
-            rows.append(("instagram", ig.upper(), f_body_bold))
+            rows.append(("instagram", f"@{ig}", f_body))  # as-typed (no uppercase)
     if facebook:
         fb = (facebook.lstrip("@")
                        .replace("https://facebook.com/", "")
@@ -453,7 +455,7 @@ def render_card_to_png(
                        .replace("http://facebook.com/", "")
                        .replace("facebook.com/", ""))
         if fb:
-            rows.append(("facebook", fb.upper(), f_body_bold))
+            rows.append(("facebook", f"@{fb}", f_body))  # as-typed (no uppercase)
 
     # Lay the rows out from the top
     row_y = sep_top
