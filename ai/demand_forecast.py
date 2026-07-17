@@ -15,7 +15,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-from .engine import MLEngine
+from .engine import MLEngine, _validate_and_clamp, MIN_SAMPLES_FOR_TRAINING, MAX_DEMAND_MULTIPLIER
 
 
 def forecast_demand(product_id: str, horizon_days: int = 30) -> Dict[str, Any]:
@@ -58,6 +58,7 @@ def forecast_demand(product_id: str, horizon_days: int = 30) -> Dict[str, Any]:
     m_info = models[product_id_str]
     m = m_info["model"]
     bias = m_info.get("bias", 0.0) or 0.0
+    model_status = m_info.get("status", "ok")
 
     # Predict next horizon_days from the day after the last training day.
     last_day_num = int(m_info["samples"])  # rough proxy
@@ -77,14 +78,39 @@ def forecast_demand(product_id: str, horizon_days: int = 30) -> Dict[str, Any]:
     future_days = np.arange(last_day_num + 1, last_day_num + 1 + horizon_days).reshape(-1, 1)
     future_preds = m.predict(future_days)
     # Apply learned bias correction + clip negatives to zero.
-    future_preds = np.maximum(future_preds - bias, 0)
+    future_preds = future_preds - bias
+    # ---- Safety clamp (v7) -------------------------------------------
+    # The historical daily average is our "scale anchor". Without it, a
+    # model that extrapolates a 0.1/day product to 50/day would produce a
+    # forecast with a wildly inflated peak. We clamp the daily prediction
+    # to MAX_DEMAND_MULTIPLIER × the historical daily average.
+    hist_daily_avg = float(m_info.get("mae", 0)) or 0.0
+    # Use the actual mean of the training data when available (from history)
+    if history:
+        actuals = [h.get("actual", 0) or 0 for h in history]
+        hist_mean = float(np.mean(actuals)) if actuals else 0.0
+    else:
+        hist_mean = hist_daily_avg
+    max_daily = hist_mean * MAX_DEMAND_MULTIPLIER if hist_mean > 0 else None
+    # If the model is in fallback (too few samples), flatten the forecast
+    # to the historical average so the chart doesn't draw an exponential
+    # curve from a few noisy points.
+    if model_status != "ok" or m_info["samples"] < MIN_SAMPLES_FOR_TRAINING:
+        future_preds = np.full(horizon_days, hist_mean)
+    else:
+        future_preds = np.array([
+            _validate_and_clamp(
+                float(p), min_val=0.0, max_val=max_daily, fallback=hist_mean
+            )
+            for p in future_preds
+        ])
 
     total_demand = float(np.sum(future_preds))
     avg_daily = float(np.mean(future_preds))
     peak_day_idx = int(np.argmax(future_preds))
     peak_day_date = future_dates[peak_day_idx].isoformat()
     forecast_series = [
-        {"date": future_dates[i].isoformat(), "predicted": float(future_preds[i])}
+        {"date": future_dates[i].isoformat(), "predicted": round(float(future_preds[i]), 2)}
         for i in range(horizon_days)
     ]
 
@@ -101,6 +127,11 @@ def forecast_demand(product_id: str, horizon_days: int = 30) -> Dict[str, Any]:
         confidence = 0.3 * acc_conf + 0.4 * sample_conf + 0.3 * mae_conf
     else:
         confidence = 0.3 + sample_conf * 0.4 + mae_conf * 0.3
+    # If we're in fallback mode, force confidence below 0.5 so the UI
+    # doesn't advertise a "confident" forecast that is really just a
+    # flat average.
+    if model_status != "ok" and confidence > 0.5:
+        confidence = 0.4
     confidence = float(np.clip(confidence, 0.1, 0.95))
 
     result = {
@@ -121,6 +152,7 @@ def forecast_demand(product_id: str, horizon_days: int = 30) -> Dict[str, Any]:
         "forecast": forecast_series,
         "accuracy": _format_accuracy(accuracy),
         "bias": round(bias, 3),
+        "model_status": model_status,  # v7: "ok" | "fallback_few_days" etc.
     }
 
     # ---- Log the prediction so we can later score it ----
