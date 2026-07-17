@@ -79,3 +79,10 @@ def render_admin_profile():
                 st.rerun()
             except Exception as e:
                 st.error(f"Update failed: {e}")
+
+    # ---- Digital business card + QR code (offline, downloadable) ----
+    try:
+        from utils.business_card import render_business_card
+        render_business_card(user)
+    except Exception as e:
+        st.error(f"Business card unavailable: {e}")
