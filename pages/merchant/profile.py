@@ -92,3 +92,10 @@ def render_merchant_profile():
 
     # ---- Preferences section (NEW) ----
     render_preferences_section()
+
+    # ---- Digital business card + QR code (offline, downloadable) ----
+    try:
+        from utils.business_card import render_business_card
+        render_business_card(user)
+    except Exception as e:
+        st.error(f"Business card unavailable: {e}")
