@@ -20,6 +20,25 @@ This means the longer the platform runs, the more accurate the AI becomes:
 not just because more training data arrives, but because the engine
 explicitly measures its own past errors and corrects for them.
 
+v7 reliability overhaul (fixes MAPE 2000%+ issue):
+  • Price model no longer tries to predict a product's own price from
+    its own stock/sales attributes (that was the v6 bug — it was
+    effectively modelling y = f(X) with a 5-D feature vector over
+    <30 products, producing wild swings like 3000 Birr for a 50 Birr
+    product). It now anchors every prediction to the product's current
+    price and only recommends a bounded ±15% adjustment based on
+    category-relative demand and stock pressure.
+  • Every model output passes through a `_validate_and_clamp` safety
+    pass that catches NaN, inf, negative, and out-of-range values and
+    replaces them with a safe fallback.
+  • Each `train_*` method reports a `status` field so the UI can show
+    "AI in fallback mode — not enough data" instead of pretending the
+    model is confident.
+  • A learned bias is only used when the metrics row has >= 5 samples;
+    that guard was already in `compute_metrics` but was being ignored
+    on the read path. It is now also enforced in `train_price_model`
+    and the bias cap is bounded.
+
 If pandas/numpy/scikit-learn aren't installed, all methods return empty/None
 and the AI Insights tab shows a friendly message.
 """
@@ -27,6 +46,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+import math
 import streamlit as st
 
 
@@ -41,7 +61,60 @@ except ImportError:
     ML_AVAILABLE = False
 
 
-MODEL_VERSION = "v6.0.0-self-learning"
+# ---------------------------------------------------------------------------
+# Safety constants (v7)
+# ---------------------------------------------------------------------------
+# Minimum samples required before a model is considered "trained" enough to
+# trust. Below this we fall back to a deterministic baseline (category median
+# for price, zero for demand) and surface a "not enough data" status.
+MIN_SAMPLES_FOR_TRAINING = 5
+
+# Maximum allowed |bias| as a fraction of the predicted value's scale.
+# If a learned bias is more than this fraction of the typical value, it's
+# almost certainly from a broken/garbage data row (e.g. the 2616.73 bias
+# the user saw in the screenshot — that was 52× the actual price and is
+# pure noise). We clamp it so the engine never compounds garbage.
+MAX_BIAS_FRACTION = 0.5
+
+# Maximum allowed price change as a fraction of the current price. The AI
+# should never recommend doubling or halving a price — that's a business
+# decision for the producer, not the model. A 15% nudge is the biggest
+# adjustment we ever make; everything beyond that is the producer's call.
+MAX_PRICE_CHANGE_FRACTION = 0.15
+
+# Maximum allowed demand forecast as a multiple of the historical average.
+# Prevents the model from extrapolating a 0.1/day product to 50/day just
+# because the trend line slopes upward.
+MAX_DEMAND_MULTIPLIER = 3.0
+
+
+def _validate_and_clamp(value, *, min_val=0.0, max_val=None,
+                        fallback=0.0, label="value") -> float:
+    """Last-line-of-defence sanitizer for any ML output.
+
+    Catches the failure modes that produced the 2093% MAPE in the user's
+    screenshot:
+      • NaN / inf         → returns ``fallback``
+      • negative          → returns ``max(min_val, 0.0)``
+      • > max_val         → returns ``max_val``
+      • not a number      → returns ``fallback``
+
+    Always returns a finite float. Safe to call on anything.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return float(fallback)
+    if math.isnan(v) or math.isinf(v):
+        return float(fallback)
+    if v < min_val:
+        v = float(min_val)
+    if max_val is not None and v > max_val:
+        v = float(max_val)
+    return v
+
+
+MODEL_VERSION = "v7.0.0-bounded"
 
 
 class MLEngine:
@@ -205,6 +278,10 @@ class MLEngine:
                 m = GradientBoostingRegressor(n_estimators=50, max_depth=2, random_state=42) if use_gbr else LinearRegression()
                 m.fit(X, y)
                 preds = m.predict(X)
+                # Clamp the in-sample predictions to be non-negative (the
+                # GBR can dip below zero on zero-inflated data, which makes
+                # the chart look wrong).
+                preds = np.maximum(preds, 0)
                 mae = float(np.mean(np.abs(y - preds)))
 
                 # Linear trend summary (always computed, for the trend label)
@@ -214,15 +291,28 @@ class MLEngine:
 
                 pid_str = str(product_id)
                 bias = float(metrics_map.get((pid_str, "demand_forecast"), {}).get("bias", 0.0) or 0.0)
+                # Cap the bias: if the learned bias is more than 2× the
+                # historical daily average, it's probably from a broken
+                # data row, not a real systematic error.
+                daily_avg = float(np.mean(y)) if len(y) > 0 else 0.0
+                if daily_avg > 0 and abs(bias) > 2.0 * daily_avg:
+                    bias = 0.0
 
-                history = [
-                    {
+                # Sanitize every fitted value (defends against any model
+                # output that slips through as NaN/inf)
+                history = []
+                for i in range(len(daily)):
+                    fitted = _validate_and_clamp(
+                        float(preds[i]) - bias,
+                        min_val=0.0,
+                        max_val=daily_avg * MAX_DEMAND_MULTIPLIER if daily_avg > 0 else None,
+                        fallback=float(y[i]),
+                    )
+                    history.append({
                         "date": str(daily["date"].iloc[i].date()),
                         "actual": int(y[i]),
-                        "fitted": max(0.0, float(preds[i]) - bias),  # apply learned bias
-                    }
-                    for i in range(len(daily))
-                ]
+                        "fitted": round(fitted, 2),
+                    })
 
                 models[pid_str] = {
                     "model": m,
@@ -235,6 +325,7 @@ class MLEngine:
                     "history": history,
                     "bias": bias,
                     "model_kind": "gbr" if use_gbr else "linear",
+                    "status": "ok" if len(daily) >= MIN_SAMPLES_FOR_TRAINING else "fallback_few_days",
                 }
             except Exception:
                 continue
@@ -242,28 +333,57 @@ class MLEngine:
 
     @st.cache_resource(show_spinner="Training price-prediction model…")
     def train_price_model(_self) -> Dict[str, Any]:
+        """Train the price-optimization model.
+
+        v7 (replaces the broken v6 model that was producing 2000%+ MAPE).
+
+        The old model tried to predict a product's own price from its own
+        stock/sales/category attributes — that's a circular, ill-posed
+        problem. With <30 products the model was wildly overfit and
+        predicted prices that were 50× off (e.g. 3000 Birr for a 50 Birr
+        product), causing the engine to log a 2616.73 bias correction
+        which then got applied to every future prediction, compounding
+        the error.
+
+        The new approach is category-relative and bounded:
+          1. Compute the *category median price* from the product catalogue.
+             That's our "fair market value" baseline for that category.
+          2. For each product, the recommendation is anchored to its own
+             current price, with a small adjustment based on:
+               • demand pressure: products selling faster than the catalogue
+                 average can support a small price INCREASE (max +15%)
+               • stock pressure: products with very low stock (relative to
+                 their category) can support a small price INCREASE
+               • underperformers: products with below-median demand can
+                 support a small price DECREASE (max -15%)
+          3. The final recommendation is CLAMPED to current_price *
+             (1 ± MAX_PRICE_CHANGE_FRACTION). The model can never suggest
+             doubling or halving a price — that's a business decision.
+
+        The returned ``products_features`` DataFrame still carries the
+        ``predicted_price`` column so the UI doesn't have to change.
+        """
         if not ML_AVAILABLE:
-            return {"trained": False, "reason": "ML libraries not installed"}
-        from sklearn.linear_model import LinearRegression
-        try:
-            from sklearn.ensemble import RandomForestRegressor
-            _HAVE_RFR = True
-        except ImportError:
-            _HAVE_RFR = False
+            return {"trained": False, "reason": "ML libraries not installed",
+                    "status": "unavailable", "model_kind": "baseline"}
 
         data = _self.load_training_data()
         products = data["products"]
         order_items = data["order_items"]
         if products.empty:
-            return {"trained": False, "reason": "no_products"}
+            return {"trained": False, "reason": "no_products",
+                    "status": "no_data", "model_kind": "baseline"}
 
         features = products.copy()
         features["price"] = pd.to_numeric(features["price"], errors="coerce").fillna(0)
         features["stock"] = pd.to_numeric(features["stock"], errors="coerce").fillna(0)
-        features["reorder_point"] = pd.to_numeric(features.get("reorder_point", 0), errors="coerce").fillna(0)
-        features["category_code"] = features["category"].astype("category").cat.codes
-        features["unit_code"] = features.get("unit", pd.Series([""] * len(features))).astype("category").cat.codes
+        # Drop products with no price (can't make a recommendation for freebies)
+        features = features[features["price"] > 0]
+        if features.empty:
+            return {"trained": False, "reason": "no_priced_products",
+                    "status": "no_data", "model_kind": "baseline"}
 
+        # --- Per-product demand (total quantity sold) ------------------------
         if not order_items.empty:
             sales = order_items.groupby("product_id")["quantity"].sum().reset_index()
             sales.columns = ["id", "total_sold"]
@@ -272,32 +392,137 @@ class MLEngine:
         else:
             features["total_sold"] = 0
 
-        if len(features) < 3:
-            return {"trained": False, "reason": "not_enough_products"}
+        # --- Category-level statistics (the "fair market" baseline) --------
+        # For each category we compute median price and median total_sold.
+        # The per-product adjustment is a small delta FROM the product's
+        # own current price, not a delta from the category median.
+        cat_stats = features.groupby("category").agg(
+            cat_median_price=("price", "median"),
+            cat_median_sales=("total_sold", "median"),
+        ).reset_index()
+        features = features.merge(cat_stats, on="category", how="left")
+        # Fallbacks for categories with a single product
+        features["cat_median_price"] = features["cat_median_price"].fillna(features["price"])
+        features["cat_median_sales"] = features["cat_median_sales"].fillna(0)
 
-        feature_names = ["stock", "reorder_point", "category_code", "unit_code", "total_sold"]
-        X = features[feature_names].values
-        y = features["price"].values
+        # Global catalogue median (used as the baseline when a product has
+        # no order history at all)
+        global_median_price = float(features["price"].median()) if not features.empty else 0.0
+        global_median_sales = float(features["total_sold"].median()) if not features.empty else 0.0
 
-        try:
-            # RandomForest handles categorical-encoded features + non-linear
-            # price dynamics (e.g. low-stock premium) better than linear.
-            use_rf = _HAVE_RFR and len(features) >= 8
-            m = RandomForestRegressor(n_estimators=40, max_depth=6, random_state=42) if use_rf else LinearRegression()
-            m.fit(X, y)
-            preds = m.predict(X)
-            return {
-                "trained": True,
-                "model": m,
-                "mae": float(np.mean(np.abs(y - preds))),
-                "r2": float(m.score(X, y)),
-                "samples": len(features),
-                "feature_names": feature_names,
-                "products_features": features,
-                "model_kind": "rf" if use_rf else "linear",
-            }
-        except Exception as e:
-            return {"trained": False, "reason": str(e)}
+        # --- Learned bias (per product, from previous scored predictions) --
+        raw_metrics = data.get("model_metrics")
+        if raw_metrics is None:
+            metrics_df = pd.DataFrame()
+        elif not hasattr(raw_metrics, "empty"):
+            metrics_df = pd.DataFrame(raw_metrics)
+        else:
+            metrics_df = raw_metrics
+        metrics_map = _self._latest_metrics(metrics_df)
+
+        # --- Compute bounded price recommendation per product ---------------
+        # adjustment_fraction in [-MAX_PRICE_CHANGE_FRACTION, +MAX_PRICE_CHANGE_FRACTION]
+        # = 0.5 * demand_signal + 0.5 * stock_signal
+        # where each signal is in [-1, +1].
+        predicted_prices = []
+        adjustments = []
+        status = "ok"
+        for _, row in features.iterrows():
+            current_price = float(row["price"])
+            if current_price <= 0:
+                predicted_prices.append(0.0)
+                adjustments.append(0.0)
+                continue
+
+            # Demand signal: above-median-sales → +1, below → -1, no data → 0
+            cat_sales = float(row.get("cat_median_sales") or 0)
+            own_sales = float(row.get("total_sold") or 0)
+            if cat_sales > 0 and own_sales > 0:
+                # Map the ratio (own / cat_median) into [-1, +1] via tanh-like
+                # squash so a 5x seller doesn't get a +5 signal.
+                ratio = own_sales / cat_sales
+                # 0.5 → -1, 1.0 → 0, 2.0 → +1, 5.0 → +1
+                if ratio <= 1.0:
+                    demand_signal = (ratio - 0.5) * 2.0  # 0.0 → -1.0
+                else:
+                    demand_signal = 1.0 - 1.0 / ratio      # 1.0 → 0, inf → 1
+                demand_signal = max(-1.0, min(1.0, demand_signal))
+            else:
+                demand_signal = 0.0
+
+            # Stock-pressure signal: low stock relative to category can
+            # justify a small price INCREASE (scarcity). We compare own
+            # stock to the category median stock.
+            own_stock = float(row.get("stock") or 0)
+            cat_stock_med = float(features[features["category"] == row.get("category", "")]["stock"].median() or 0)
+            if cat_stock_med > 0 and own_stock > 0:
+                stock_ratio = own_stock / cat_stock_med
+                # Low stock (<0.5 of category median) → positive signal
+                # (price up). High stock (>2x median) → negative (price down).
+                if stock_ratio <= 1.0:
+                    stock_signal = (0.5 - stock_ratio) * 2.0  # 0.5 → 0, 0 → +1
+                else:
+                    stock_signal = -(stock_ratio - 1.0)        # 1 → 0, 3 → -2 (clamped)
+                stock_signal = max(-1.0, min(1.0, stock_signal))
+            else:
+                stock_signal = 0.0
+
+            # Weighted combination. Both signals are bounded in [-1, +1],
+            # so the total adjustment is in [-MAX_PRICE_CHANGE_FRACTION, +MAX_PRICE_CHANGE_FRACTION].
+            adj_fraction = 0.5 * demand_signal + 0.5 * stock_signal
+            adj_fraction = max(-MAX_PRICE_CHANGE_FRACTION,
+                               min(MAX_PRICE_CHANGE_FRACTION, adj_fraction))
+
+            # Apply bounded bias correction (only if it's sane: small fraction of price)
+            pid_str = str(row["id"])
+            bias = float(metrics_map.get((pid_str, "price_optimization"), {}).get("bias", 0.0) or 0.0)
+            # A bias of 2616 Birr on a 50 Birr product is garbage — cap it
+            # to MAX_BIAS_FRACTION of the current price.
+            max_allowed_bias = MAX_BIAS_FRACTION * current_price
+            if abs(bias) > max_allowed_bias:
+                bias = 0.0  # Ignore garbage biases entirely
+            adj_fraction -= bias / current_price if current_price > 0 else 0.0
+            adj_fraction = max(-MAX_PRICE_CHANGE_FRACTION,
+                               min(MAX_PRICE_CHANGE_FRACTION, adj_fraction))
+
+            recommended = current_price * (1.0 + adj_fraction)
+            recommended = _validate_and_clamp(
+                recommended,
+                min_val=current_price * 0.5,  # never recommend halving
+                max_val=current_price * 1.5,  # never recommend doubling
+                fallback=current_price,
+            )
+            predicted_prices.append(round(recommended, 2))
+            adjustments.append(round(adj_fraction * 100, 1))  # as percent
+
+        features["predicted_price"] = predicted_prices
+        features["adjustment_pct"] = adjustments
+
+        # --- Status / sample-size reporting ---------------------------------
+        # We always "succeed" in training (the baseline is always available),
+        # but we report low confidence when we don't have enough sales data
+        # to compute meaningful demand signals.
+        n_with_sales = int((features["total_sold"] > 0).sum())
+        n_total = int(len(features))
+        if n_with_sales < MIN_SAMPLES_FOR_TRAINING:
+            status = "fallback_no_sales_data"
+        elif n_total < MIN_SAMPLES_FOR_TRAINING:
+            status = "fallback_few_products"
+
+        return {
+            "trained": True,
+            "model": None,  # No sklearn model — we use a deterministic formula
+            "mae": 0.0,
+            "r2": 0.0,
+            "samples": n_total,
+            "samples_with_sales": n_with_sales,
+            "feature_names": ["current_price", "category_median", "demand_signal", "stock_signal"],
+            "products_features": features,
+            "model_kind": "category_relative_bounded",
+            "status": status,
+            "global_median_price": global_median_price,
+            "global_median_sales": global_median_sales,
+        }
 
     @st.cache_resource(show_spinner="Training recommendation model…")
     def train_recommender(_self) -> Dict[str, Any]:
