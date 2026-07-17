@@ -65,17 +65,42 @@ def render_public_card_page(card_id: str) -> None:
         unsafe_allow_html=True,
     )
 
-    # Look up the user
+    # Look up the user. The instagram/facebook columns are added in
+    # migration v12 — if the deployment hasn't been migrated yet, we
+    # fall back to a query without those columns so the page still
+    # works (just without social handles).
     try:
         client = _get_client()
         r = client.table("profiles").select(
             "id, full_name, email, phone, location, role, company, "
-            "avatar_url, is_verified, instagram, facebook"
+            "avatar_url, is_verified, instagram, facebook, title, website, bio"
         ).eq("id", card_id).maybe_single().execute()
         user = r.data if r and r.data else None
     except Exception as e:
-        st.error(f"Failed to load card: {e}")
-        return
+        # PostgREST error 42703 = column doesn't exist (migration not run yet)
+        # Fall back to the basic select without the new social columns
+        err_str = str(e)
+        if "does not exist" in err_str or "42703" in err_str or "PGRST204" in err_str:
+            try:
+                client = _get_client()
+                r = client.table("profiles").select(
+                    "id, full_name, email, phone, location, role, company, "
+                    "avatar_url, is_verified"
+                ).eq("id", card_id).maybe_single().execute()
+                user = r.data if r and r.data else None
+                # Add empty defaults for the missing columns
+                if user:
+                    user.setdefault("instagram", "")
+                    user.setdefault("facebook", "")
+                    user.setdefault("title", "")
+                    user.setdefault("website", "")
+                    user.setdefault("bio", "")
+            except Exception as e2:
+                st.error(f"Failed to load card: {e2}")
+                return
+        else:
+            st.error(f"Failed to load card: {e}")
+            return
 
     if not user:
         st.markdown(
