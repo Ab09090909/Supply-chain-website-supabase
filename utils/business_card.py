@@ -334,7 +334,8 @@ def _render_downloads(user: dict) -> None:
     with c1:
         try:
             from utils.card_image import render_card_to_png
-            png_bytes = render_card_to_png(user)
+            vcard_str = build_vcard(user_for_display)
+            png_bytes = render_card_to_png(user_for_display, vcard=vcard_str)
         except Exception:
             png_bytes = None
         if png_bytes:
