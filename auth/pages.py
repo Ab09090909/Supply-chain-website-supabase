@@ -2,6 +2,10 @@
 Auth UI pages - professional login / signup / forgot-password / reset-password.
 
 Each function renders a complete page and returns True on success.
+
+Each page now has a beautiful welcome section at the top (brand logo,
+tagline, key features) followed by the form card. This gives visitors
+a clear "what is this platform" moment before they sign in.
 """
 from __future__ import annotations
 
@@ -24,29 +28,115 @@ from utils.ui import (
 from utils.constants import ROLE_OPTIONS, ROLE_DESCRIPTIONS
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # SHARED AUTH STYLES (injected once per page render)
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 _AUTH_CSS = """
 <style>
 /* Auth page wrapper — centres the card on screen */
 .auth-wrapper {
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 2rem 1rem;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1rem 2rem 1rem;
     min-height: 60vh;
 }
 
-/* The card itself */
+/* ── Welcome / hero section above the card ──────────────────── */
+.auth-hero {
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    animation: fadeInDown 0.4s ease-out;
+}
+.auth-hero-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: linear-gradient(135deg, #0f3d23 0%, #1a5c2e 50%, #10b981 100%);
+    background-size: 200% 200%;
+    animation: gradientShift 6s ease infinite;
+    padding: 10px 18px 10px 12px;
+    border-radius: 50px;
+    color: white;
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+    margin-bottom: 14px;
+}
+.auth-hero-logo-icon {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+}
+.auth-hero-tagline {
+    font-size: 1.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0 0 6px 0;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+}
+.auth-hero-sub {
+    color: #64748b;
+    font-size: 0.9rem;
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+}
+
+/* Feature pills */
+.auth-features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+.auth-feature {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.auth-feature:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(16, 185, 129, 0.15);
+}
+
+/* ── The card itself ──────────────────────────────────────── */
 .auth-card {
     width: 100%;
     max-width: 480px;
-    padding: 2.5rem 2.25rem;
+    padding: 2.25rem 2.25rem;
     border-radius: 18px;
     background: #ffffff;
     box-shadow: 0 8px 40px rgba(15, 23, 42, 0.09);
     border: 1px solid #e8edf2;
+    position: relative;
+    overflow: hidden;
+    animation: fadeInUp 0.5s ease-out;
+}
+.auth-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #10b981 0%, #34d399 50%, #6ee7b7 100%);
 }
 
 /* Logo / brand mark above title */
@@ -73,7 +163,7 @@ _AUTH_CSS = """
 
 /* Title + subtitle */
 .auth-title {
-    font-size: 1.65rem;
+    font-size: 1.55rem;
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.02em;
@@ -139,6 +229,32 @@ _AUTH_CSS = """
 """
 
 
+# The welcome / hero section that sits above every auth page.
+# It introduces the platform to visitors who haven't signed in yet.
+_AUTH_HERO_HTML = """
+<div class="auth-hero">
+  <div class="auth-hero-logo">
+    <span class="auth-hero-logo-icon">📦</span>
+    <span>EthioChain</span>
+  </div>
+  <div class="auth-hero-tagline">Welcome to the AI Supply Chain Platform</div>
+  <div class="auth-hero-sub">
+    Connect producers, merchants, and customers in one smart marketplace —
+    powered by AI-driven demand forecasts, merchant matching, and
+    end-to-end order tracking.
+  </div>
+  <div class="auth-features">
+    <span class="auth-feature">🤖 AI Predictions</span>
+    <span class="auth-feature">🤝 Smart Matching</span>
+    <span class="auth-feature">📦 Order Tracking</span>
+    <span class="auth-feature">⭐ Verified Reviews</span>
+    <span class="auth-feature">🔒 Secure Auth</span>
+    <span class="auth-feature">📈 Insights</span>
+  </div>
+</div>
+"""
+
+
 def _inject_auth_css():
     """Inject shared auth styles — safe to call multiple times (browser dedupes)."""
     try:
@@ -147,14 +263,21 @@ def _inject_auth_css():
         st.markdown(f'<div style="display:none">{_AUTH_CSS}</div>', unsafe_allow_html=True)
 
 
+def _auth_hero():
+    """Render the welcome section that sits above the auth card."""
+    try:
+        st.html(_AUTH_HERO_HTML)
+    except AttributeError:
+        st.markdown(_AUTH_HERO_HTML, unsafe_allow_html=True)
+
+
 def _auth_header(title: str, subtitle: str):
-    """Render the brand mark + title + subtitle block."""
+    """Render the in-card brand mark + title + subtitle block."""
+    # Note: the main "EthioChain" / welcome section is now in
+    # ``_auth_hero()`` above the card. This header is just the
+    # card-internal title (e.g. "Sign in to your account").
     st.markdown(
         f"""
-        <div class="auth-brand">
-            <span class="auth-brand-dot"></span>
-            <span class="auth-brand-name">EthioChain</span>
-        </div>
         <div class="auth-title">{title}</div>
         <div class="auth-subtitle">{subtitle}</div>
         """,
@@ -170,12 +293,13 @@ def _auth_footer(text: str, link_label: str, link_href: str):
     )
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # LOGIN PAGE
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 def render_login_page() -> bool:
     """Returns True if login succeeded (caller should rerun)."""
     _inject_auth_css()
+    _auth_hero()
     _auth_header(
         "Sign in to your account",
         "Welcome back to the AI Supply Chain Platform",
@@ -223,11 +347,12 @@ def render_login_page() -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # SIGNUP PAGE
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 def render_signup_page() -> bool:
     _inject_auth_css()
+    _auth_hero()
     _auth_header(
         "Create your account",
         "Join the AI Supply Chain Platform in under a minute",
@@ -328,11 +453,12 @@ def render_signup_page() -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # FORGOT PASSWORD PAGE
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 def render_forgot_password_page() -> bool:
     _inject_auth_css()
+    _auth_hero()
     _auth_header(
         "Reset your password",
         "Enter your email and we'll send you a reset link.",
@@ -358,11 +484,12 @@ def render_forgot_password_page() -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # RESET PASSWORD PAGE (landed from email link)
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 def render_reset_password_page() -> bool:
     _inject_auth_css()
+    _auth_hero()
     _auth_header(
         "Set a new password",
         "Choose a strong password for your account.",
@@ -396,9 +523,9 @@ def render_reset_password_page() -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # LOGOUT
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 def handle_logout():
     sign_out()
     st.rerun()
