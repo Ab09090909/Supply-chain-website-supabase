@@ -48,6 +48,8 @@ REQUIRED_FILES = [
     "utils/storage.py",
     "utils/preferences.py",
     "utils/db_health.py",
+    "utils/business_card.py",
+    "utils/card_image.py",
     "ai/__init__.py",
     "ai/assistant.py",
     "ai/engine.py",
@@ -63,6 +65,7 @@ REQUIRED_FILES = [
     "pages/common/notifications.py",
     "pages/common/product_detail.py",
     "pages/common/merchant_requests.py",
+    "pages/common/public_card.py",
     "pages/producer/__init__.py",
     "pages/producer/dashboard.py",
     "pages/producer/inventory.py",
@@ -741,6 +744,18 @@ def main():
             logged_in = False
 
     if not logged_in:
+        # Check for a public business card URL first (?card=<id>)
+        # This is a public page — no login required.
+        card_id = st.query_params.get("card", "")
+        if card_id:
+            try:
+                from pages.common.public_card import render_public_card_page
+                render_public_card_page(card_id)
+                return
+            except Exception as e:
+                st.error(f"Failed to load public card: {e}")
+                return
+
         # Not logged in → show login page (hide sidebar)
         st.markdown(
             """<style>
