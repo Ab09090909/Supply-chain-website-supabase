@@ -459,6 +459,14 @@ def _render_demand_chart(forecast: dict):
         if mape is not None:
             cap_parts.append(f"Your historical accuracy: **{100 - mape:.1f}%** (MAPE {mape:.1f}%)")
         cap_parts.append(f"Samples scored: **{acc.get('samples', 0)}**")
+    # v7: surface a fallback warning so users know when the chart shows a
+    # flat average instead of a real learned forecast.
+    if forecast.get("model_status") and forecast["model_status"] != "ok":
+        st.warning(
+            "⚠️ **AI in fallback mode** — not enough order history to train a "
+            "real forecast yet. The chart shows the historical daily average "
+            "as a flat line. Place more orders to unlock the real prediction."
+        )
     st.caption(" · ".join(cap_parts))
 
     st.line_chart(chart_df, use_container_width=True, height=320)
@@ -587,6 +595,14 @@ def _render_price_chart(prediction: dict):
         if mape is not None:
             cap_parts.append(f"Your accuracy: **{100 - mape:.1f}%** (MAPE {mape:.1f}%)")
         cap_parts.append(f"Samples scored: **{acc.get('samples', 0)}**")
+    # v7: surface a fallback warning when the recommendation came from the
+    # flat baseline (no real learned signal available).
+    if prediction.get("model_status") and prediction["model_status"] != "ok":
+        st.warning(
+            "⚠️ **AI in fallback mode** — not enough sales history to compute a "
+            "demand signal. The recommendation is a safe bounded nudge from the "
+            "current price (±15% max). Add sales data to unlock the real model."
+        )
     st.caption(" · ".join(cap_parts))
 
     st.line_chart(chart_df, use_container_width=True, height=320)
