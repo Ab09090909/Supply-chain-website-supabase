@@ -38,7 +38,7 @@ _AUTH_CSS = """
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 1.5rem 1rem 2rem 1rem;
+    padding: 0.5rem 1rem 1.5rem 1rem;
     min-height: 60vh;
 }
 
@@ -46,72 +46,76 @@ _AUTH_CSS = """
 .auth-hero {
     width: 100%;
     max-width: 480px;
-    margin-bottom: 1.5rem;
+    margin: 0.5rem 0 1rem 0;
     text-align: center;
     animation: fadeInDown 0.4s ease-out;
+    /* Make sure the hero never gets clipped by a parent with
+       ``overflow: hidden`` (some Streamlit containers do this). */
+    overflow: visible;
 }
 .auth-hero-logo {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
     background: linear-gradient(135deg, #0f3d23 0%, #1a5c2e 50%, #10b981 100%);
     background-size: 200% 200%;
     animation: gradientShift 6s ease infinite;
-    padding: 10px 18px 10px 12px;
+    padding: 6px 14px 6px 8px;
     border-radius: 50px;
     color: white;
     font-weight: 800;
-    font-size: 1.05rem;
+    font-size: 0.85rem;
     letter-spacing: -0.01em;
-    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
-    margin-bottom: 14px;
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.3);
+    margin-bottom: 10px;
 }
 .auth-hero-logo-icon {
-    width: 32px; height: 32px;
+    width: 26px; height: 26px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.18);
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 1.1rem;
+    font-size: 0.9rem;
 }
 .auth-hero-tagline {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 800;
     background: linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin: 0 0 6px 0;
+    margin: 0 0 4px 0;
     line-height: 1.25;
     letter-spacing: -0.02em;
 }
 .auth-hero-sub {
     color: #64748b;
-    font-size: 0.9rem;
-    margin: 0 0 16px 0;
-    line-height: 1.5;
+    font-size: 0.82rem;
+    margin: 0 0 10px 0;
+    line-height: 1.4;
 }
 
 /* Feature pills */
 .auth-features {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px;
     justify-content: center;
-    margin-bottom: 4px;
+    margin-bottom: 0;
 }
 .auth-feature {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     background: #ecfdf5;
     color: #047857;
     border: 1px solid #a7f3d0;
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 16px;
+    font-size: 0.66rem;
     font-weight: 600;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    white-space: nowrap;
 }
 .auth-feature:hover {
     transform: translateY(-1px);
@@ -122,7 +126,7 @@ _AUTH_CSS = """
 .auth-card {
     width: 100%;
     max-width: 480px;
-    padding: 2.25rem 2.25rem;
+    padding: 1.5rem 1.75rem;
     border-radius: 18px;
     background: #ffffff;
     box-shadow: 0 8px 40px rgba(15, 23, 42, 0.09);
@@ -163,18 +167,18 @@ _AUTH_CSS = """
 
 /* Title + subtitle */
 .auth-title {
-    font-size: 1.55rem;
+    font-size: 1.4rem;
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.02em;
-    margin: 0 0 0.3rem 0;
+    margin: 0 0 0.25rem 0;
     line-height: 1.2;
 }
 .auth-subtitle {
     color: #64748b;
-    font-size: 0.88rem;
-    margin: 0 0 1.75rem 0;
-    line-height: 1.5;
+    font-size: 0.85rem;
+    margin: 0 0 1.25rem 0;
+    line-height: 1.4;
 }
 
 /* Divider with label */
@@ -237,18 +241,16 @@ _AUTH_HERO_HTML = """
     <span class="auth-hero-logo-icon">📦</span>
     <span>EthioChain</span>
   </div>
-  <div class="auth-hero-tagline">Welcome to the AI Supply Chain Platform</div>
+  <div class="auth-hero-tagline">AI Supply Chain Platform</div>
   <div class="auth-hero-sub">
-    Connect producers, merchants, and customers in one smart marketplace —
-    powered by AI-driven demand forecasts, merchant matching, and
-    end-to-end order tracking.
+    One smart marketplace for producers, merchants, and customers — with AI forecasts, smart matching, and end-to-end order tracking.
   </div>
   <div class="auth-features">
-    <span class="auth-feature">🤖 AI Predictions</span>
-    <span class="auth-feature">🤝 Smart Matching</span>
-    <span class="auth-feature">📦 Order Tracking</span>
-    <span class="auth-feature">⭐ Verified Reviews</span>
-    <span class="auth-feature">🔒 Secure Auth</span>
+    <span class="auth-feature">🤖 AI</span>
+    <span class="auth-feature">🤝 Matching</span>
+    <span class="auth-feature">📦 Tracking</span>
+    <span class="auth-feature">⭐ Reviews</span>
+    <span class="auth-feature">🔒 Secure</span>
     <span class="auth-feature">📈 Insights</span>
   </div>
 </div>
