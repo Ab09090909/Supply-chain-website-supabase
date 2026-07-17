@@ -130,22 +130,26 @@ def _generate_qr_png(data: str, size: int = 540) -> Optional[Image.Image]:
     """Generate a QR code as a PIL Image (or None if qrcode isn't installed).
 
     Returns a square ``Image`` with the QR pattern on a white background.
+    Uses the PIL image factory so we don't depend on pypng.
     """
     try:
         import qrcode
-        from qrcode.image.pure import PyPNGImage
+        from qrcode.image.pil import PilImage
         qr = qrcode.QRCode(
             version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_H,  # 30%
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
             box_size=8,
             border=2,
         )
         qr.add_data(data)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white",
-                            image_factory=PyPNGImage)
-        # PyPNGImage.save() needs a file path. Save to a temp file and
-        # read back, then convert to a PIL Image.
+                            image_factory=PilImage)
+        # qrcode's PIL factory returns a PIL Image, but it may be in
+        # 'L' (luminance) mode — convert to 'RGB' for our use.
+        if hasattr(img, "convert"):
+            return img.convert("RGB")
+        # Fallback for non-PIL backends: save via tempfile
         import tempfile, os
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
             tmp_path = tf.name
@@ -155,6 +159,7 @@ def _generate_qr_png(data: str, size: int = 540) -> Optional[Image.Image]:
         finally:
             try: os.unlink(tmp_path)
             except Exception: pass
+        return None
     except Exception:
         return None
 
