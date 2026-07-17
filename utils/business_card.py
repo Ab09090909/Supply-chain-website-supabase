@@ -213,47 +213,60 @@ def _build_card_preview_html(qr_png_b64: str, user: dict) -> str:
     if avatar:
         avatar_html = (
             f'<img src="{avatar}" '
-            f'style="width:140px;height:140px;border-radius:50%;object-fit:cover;'
+            f'style="width:130px;height:130px;border-radius:50%;object-fit:cover;'
             f'border:4px solid #ffffff;box-shadow:0 2px 12px rgba(0,0,0,0.10);" />'
         )
     else:
         # Initials disc
         initials = "".join(p[0].upper() for p in name.split()[:2] if p) or "?"
         avatar_html = (
-            f'<div style="width:140px;height:140px;border-radius:50%;'
+            f'<div style="width:130px;height:130px;border-radius:50%;'
             f'background:linear-gradient(135deg,#dbeafe 0%,#bfdbfe 100%);'
             f'display:flex;align-items:center;justify-content:center;'
-            f'font-size:3.4rem;font-weight:700;color:#475569;'
+            f'font-size:3.2rem;font-weight:700;color:#475569;'
             f'border:4px solid #ffffff;box-shadow:0 2px 12px rgba(0,0,0,0.10);">'
             f'{initials}</div>'
         )
 
-    # Contact info rows
-    def _row(icon, text):
+    # Contact info rows.
+    # KEY FIX: don't force uppercase on phone/email — it makes them wrap
+    # at every special character. Use a smaller font, ``overflow-wrap:
+    # anywhere`` so long strings break gracefully, and ``min-width:0``
+    # on the flex child so the column actually shrinks.
+    def _row(icon, text, *, uppercase=False, font_size="0.85rem"):
+        ls = "0.04em" if uppercase else "0"
+        transform = "uppercase" if uppercase else "none"
+        weight = "600" if uppercase else "500"
         return (
-            f'<div style="display:flex;align-items:flex-start;gap:14px;'
-            f'margin-bottom:14px;font-size:0.95rem;color:#1f2937;line-height:1.35;">'
-            f'<div style="flex:0 0 24px;font-size:1.1rem;line-height:1.2;'
+            f'<div style="display:flex;align-items:flex-start;gap:10px;'
+            f'margin-bottom:10px;font-size:{font_size};color:#1f2937;line-height:1.4;'
+            f'min-width:0;">'
+            f'<div style="flex:0 0 20px;font-size:1rem;line-height:1.2;'
             f'display:flex;align-items:center;justify-content:center;'
-            f'width:24px;height:24px;color:#334155;">{icon}</div>'
-            f'<div style="flex:1;text-transform:uppercase;letter-spacing:0.03em;'
-            f'word-break:break-word;">{text}</div></div>'
+            f'width:20px;height:20px;color:#334155;">{icon}</div>'
+            f'<div style="flex:1;min-width:0;text-transform:{transform};'
+            f'letter-spacing:{ls};font-weight:{weight};'
+            f'overflow-wrap:anywhere;word-break:normal;">{text}</div></div>'
         )
 
     rows_html = ""
+    # Address — uppercase is fine because it's plain words
     if location and location != "—":
-        rows_html += _row("🏠", location)
+        rows_html += _row("🏠", location, uppercase=True, font_size="0.78rem")
+    # Phone — keep as typed, no uppercase (so it doesn't break)
     if phone and phone != "—":
-        rows_html += _row("📞", phone)
+        rows_html += _row("📞", phone, font_size="0.88rem")
+    # Email — keep as typed, lowercase
     if email and email != "—":
-        rows_html += _row("✉️", email)
+        rows_html += _row("✉️", email, font_size="0.82rem")
+    # Instagram — display as "@handle" without forcing uppercase (so the @ survives)
     if instagram:
         ig = (instagram.lstrip("@")
                        .replace("https://instagram.com/", "")
                        .replace("http://instagram.com/", "")
                        .replace("instagram.com/", ""))
         if ig:
-            rows_html += _row("📷", ig)
+            rows_html += _row("📷", f"@{ig}", font_size="0.85rem")
     if facebook:
         fb = (facebook.lstrip("@")
                        .replace("https://facebook.com/", "")
@@ -261,7 +274,7 @@ def _build_card_preview_html(qr_png_b64: str, user: dict) -> str:
                        .replace("http://facebook.com/", "")
                        .replace("facebook.com/", ""))
         if fb:
-            rows_html += _row("📘", fb)
+            rows_html += _row("📘", f"@{fb}", font_size="0.85rem")
 
     return f"""
     <div style="
@@ -270,7 +283,7 @@ def _build_card_preview_html(qr_png_b64: str, user: dict) -> str:
         background: #ffffff;
         border-radius: 16px;
         box-shadow: 0 10px 36px rgba(0,0,0,0.14);
-        padding: 28px 32px;
+        padding: 24px 28px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         display: flex;
         gap: 0;
@@ -279,42 +292,47 @@ def _build_card_preview_html(qr_png_b64: str, user: dict) -> str:
             linear-gradient(180deg, #fdfdfb 0%, #f6f4ef 100%);
     ">
         <div style="
-            flex: 0 0 42%;
+            flex: 0 0 38%;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding-right: 24px;
+            padding-right: 20px;
             text-align: center;
         ">
             {avatar_html}
             <div style="
-                margin-top: 18px;
-                font-size: 1.45rem;
+                margin-top: 16px;
+                font-size: 1.3rem;
                 font-weight: 700;
                 color: #1e293b;
-                letter-spacing: 0.06em;
+                letter-spacing: 0.05em;
                 text-transform: uppercase;
+                line-height: 1.2;
+                word-break: break-word;
+                max-width: 100%;
             ">{name}</div>
             <div style="
                 margin-top: 4px;
-                font-size: 0.78rem;
+                font-size: 0.72rem;
                 color: #64748b;
-                letter-spacing: 0.22em;
+                letter-spacing: 0.2em;
                 text-transform: uppercase;
             ">{title or role or 'Member'}</div>
         </div>
         <div style="
             flex: 0 0 1px;
             background: linear-gradient(180deg, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%);
-            margin: 0 18px;
+            margin: 0 16px;
         "></div>
         <div style="
             flex: 1;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            padding-left: 12px;
+            padding-left: 8px;
         ">
             {rows_html}
         </div>
@@ -353,7 +371,9 @@ def render_business_card(user: dict) -> None:
     Shows:
       * Public card URL (so the user can copy/share it)
       * Social handle inputs (Instagram / Facebook)
-      * Live HTML preview of the card with the QR
+      * Live HTML preview of the card (no QR — the QR is shown
+        separately below the card so it's scannable on its own)
+      * Scannable QR code panel with caption
       * Download buttons (Card PNG, QR PNG, vCard file)
     """
     st.markdown("---")
@@ -379,28 +399,94 @@ def render_business_card(user: dict) -> None:
     user_for_display["facebook"]   = st.session_state.get("bc_facebook",   user.get("facebook")   or "")
 
     vcard_str = build_vcard(user_for_display)
-    # The QR code on the card encodes the public URL (so scanning
-    # opens the card in a phone browser, not just a contact save).
+    # The QR encodes the public URL (so scanning opens the card online,
+    # no login required)
     qr_data = public_url if public_url else vcard_str
-    qr_bytes = make_qr_png(qr_data, size=10, border=2)
 
-    # Render the live card preview
-    if qr_bytes:
-        qr_b64 = base64.b64encode(qr_bytes).decode()
-    else:
-        qr_b64 = ""
-
+    # Render the live card preview (NO QR on the card itself)
     from utils.ui import _html
-    _html(_build_card_preview_html(qr_b64, user_for_display))
+    _html(_build_card_preview_html("", user_for_display))
 
+    # ── Scannable QR code — shown SEPARATELY below the card ─────
+    _render_inline_qr(qr_data)
+
+    # Download buttons
+    _render_downloads(user_for_display, vcard_str, qr_data)
+
+
+def _render_inline_qr(qr_data: str) -> None:
+    """Render a scannable QR code panel below the business card.
+
+    The QR is displayed on its own row, not embedded in the card, so
+    it can be easily scanned with a phone. Below the QR we show a
+    short instruction ("Point your phone camera to scan").
+    """
+    if not qr_data:
+        return
+    qr_bytes = make_qr_png(qr_data, size=10, border=2)
     if not qr_bytes:
         st.warning(
             "⚠️ QR code generation is unavailable. "
             "Add `qrcode` and `Pillow` to requirements.txt and restart."
         )
+        return
 
-    # Download buttons
-    _render_downloads(user_for_display, vcard_str, qr_bytes)
+    qr_b64 = base64.b64encode(qr_bytes).decode()
+
+    from utils.ui import _html
+    _html(f"""
+    <div style="
+        max-width: 720px;
+        margin: 0 auto 1rem auto;
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+        padding: 20px 24px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        background-image:
+            linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
+    ">
+        <div style="
+            flex: 0 0 auto;
+            background: #ffffff;
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            border: 2px solid #10b981;
+        ">
+            <img src="data:image/png;base64,{qr_b64}"
+                 style="width:140px;height:140px;display:block;" />
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="
+                font-size: 0.7rem;
+                font-weight: 700;
+                color: #047857;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                margin-bottom: 6px;
+            ">📱 Scan to view online</div>
+            <div style="
+                font-size: 1.05rem;
+                font-weight: 700;
+                color: #0f172a;
+                margin-bottom: 4px;
+                line-height: 1.3;
+            ">Open this card on your phone</div>
+            <div style="
+                font-size: 0.82rem;
+                color: #475569;
+                line-height: 1.4;
+            ">
+                Point your phone's camera at the QR code, or share the
+                link above. No login required — anyone can see your card.
+            </div>
+        </div>
+    </div>
+    """)
 
 
 def _render_social_inputs(user: dict) -> None:
@@ -435,8 +521,14 @@ def _sync_social_inputs() -> None:
     st.session_state["bc_facebook"]   = st.session_state.get("_bc_fb_input", "")
 
 
-def _render_downloads(user: dict, vcard_str: str, qr_bytes: Optional[bytes]) -> None:
-    """Render the download buttons."""
+def _render_downloads(user: dict, vcard_str: str, qr_data: str) -> None:
+    """Render the download buttons.
+
+    Args:
+        user: the user dict
+        vcard_str: the vCard 3.0 string (for the .vcf download)
+        qr_data: the string the QR encodes (usually the public URL)
+    """
     st.markdown("")
     c1, c2, c3 = st.columns(3)
     safe_name = _safe_filename(user.get("full_name", ""))
@@ -466,15 +558,15 @@ def _render_downloads(user: dict, vcard_str: str, qr_bytes: Optional[bytes]) -> 
                 help="Pillow isn't installed.",
             )
 
-    # 2. QR code PNG (separate, framed, with "SCAN ME" label)
+    # 2. QR code PNG (separate, framed, with "SCAN TO VIEW CARD" label)
     with c2:
         qr_png = None
         try:
             from utils.card_image import render_qr_only_png
-            public_url = build_public_card_url(user)
-            qr_png = render_qr_only_png(public_url or vcard_str)
+            qr_png = render_qr_only_png(qr_data or vcard_str)
         except Exception:
-            qr_png = qr_bytes  # fall back to raw QR
+            # Fall back to the raw (unframed) QR bytes
+            qr_png = make_qr_png(qr_data or vcard_str)
         if qr_png:
             st.download_button(
                 label="⬇️ Download QR (PNG)",
