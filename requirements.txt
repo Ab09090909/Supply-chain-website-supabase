@@ -9,6 +9,8 @@ pandas>=1.5.0
 numpy>=1.24.0
 scikit-learn>=1.2.0
 groq>=0.4.0
-qrcode[pil]>=7.4
+# Business card QR code (offline generation)
+qrcode>=7.4
+pypng>=0.20220715.0
 Pillow>=10.0.0
 
