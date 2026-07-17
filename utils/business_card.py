@@ -4,44 +4,30 @@ Business Card + QR Code module.
 Renders a beautiful digital business card and generates a QR code that,
 when scanned, opens the user's public business card page online.
 
-Why online instead of vCard?
-  * The user said "make link for qr code to see user business card
-    online without login" — so the QR encodes a URL to the public
-    card page, not a vCard. This means:
-      - Anyone can scan the QR with their phone → opens the URL in
-        the phone's browser → sees the full card → can "Save Contact"
-        from there.
-      - The public URL is shareable anywhere (text, email, social) —
-        not just via QR scan.
-  * The user can preview the public URL right in the profile tab.
-
 Layout
 ------
-The card matches the user's reference design — everything stacked
-vertically under the QR:
-    ┌────────────────────────────────┐
-    │     ┌───────────────┐           │
-    │     │      QR       │           │
-    │     └───────────────┘           │
-    │      SCAN TO VIEW ONLINE        │
-    │                                 │
-    │      ABRAHAM SMITH              │
-    │      SENIOR PRODUCER            │
-    │                                 │
-    │   🏠  12 Your Business Road     │
-    │   📞  +251 911 123 456          │
-    │   ✉️  abraham@gmail.com         │
-    │   📷  @abraham                  │
-    │   📘  abraham.smith              │
-    │                                 │
-    │     ── Powered by EthioChain ── │
-    └─────────────────────────────────┘
+The card matches the user's reference design — a **horizontal layout**
+with the profile photo on the left and contact info on the right,
+separated by a thin vertical line. The QR code is generated separately
+(downloadable on its own) and is NOT embedded in the card.
+
+    ┌──────────────────────────────────────────────────┐
+    │   ┌────────┐   │  🏠  12 Your Business Road       │
+    │   │  PHOTO │   │  City, State                    │
+    │   └────────┘   │  55555                          │
+    │                │  📞  555-555-5555               │
+    │   NAME         │  ✉️  mail@emailaddress.com       │
+    │   title        │  📷  your_instagram              │
+    │                │  📘  your_facebook               │
+    └──────────────────────────────────────────────────┘
 """
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import re
+import urllib.request
 from typing import Optional
 
 import streamlit as st
@@ -165,81 +151,190 @@ def make_qr_png(data: str, size: int = 10, border: int = 2) -> Optional[bytes]:
 
 
 # -----------------------------------------------------------------------
-# Inline card preview — stacked vertically under the QR
+# Avatar URL helper (Gravatar fallback)
+# -----------------------------------------------------------------------
+def _avatar_data_url(user: dict) -> str:
+    """Return a data: URL for the user's avatar, or '' if unavailable.
+
+    Tries the user's ``avatar_url`` first, then falls back to Gravatar
+    (using the email's MD5). Returns '' if neither is reachable — the
+    HTML preview will then show a coloured initials disc.
+    """
+    avatar_url = (user.get("avatar_url") or "").strip()
+    email = (user.get("email") or "").strip().lower()
+    if avatar_url.startswith(("http://", "https://")):
+        try:
+            req = urllib.request.Request(
+                avatar_url,
+                headers={"User-Agent": "Mozilla/5.0 EthioChain/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = resp.read()
+            b64 = base64.b64encode(data).decode()
+            return f"data:image/jpeg;base64,{b64}"
+        except Exception:
+            pass
+    if email:
+        try:
+            digest = hashlib.md5(email.encode("utf-8")).hexdigest()
+            grav = f"https://www.gravatar.com/avatar/{digest}?d=404&s=200"
+            req = urllib.request.Request(
+                grav, headers={"User-Agent": "Mozilla/5.0 EthioChain/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = resp.read()
+            b64 = base64.b64encode(data).decode()
+            return f"data:image/jpeg;base64,{b64}"
+        except Exception:
+            pass
+    return ""
+
+
+# -----------------------------------------------------------------------
+# Inline card preview — HORIZONTAL layout matching the reference image
 # -----------------------------------------------------------------------
 def _build_card_preview_html(qr_png_b64: str, user: dict) -> str:
-    """Build an HTML preview of the business card with QR on top and
-    all info below — matching the user's "stack everything under the
-    QR" request.
+    """Build an HTML preview of the business card matching the reference:
+    profile photo on the left, contact info on the right, vertical
+    divider between them. The QR is NOT embedded in this card — the
+    user downloads it separately.
     """
-    name = user.get("full_name") or "Your Name"
-    role = (user.get("role") or "").strip().capitalize()
-    title = user.get("title") or role or "Member"
-    phone = user.get("phone") or "—"
-    email = user.get("email") or "—"
-    location = user.get("location") or "—"
-    instagram = user.get("instagram") or ""
-    facebook = user.get("facebook") or ""
+    name = (user.get("full_name") or "Your Name").strip()
+    role = (user.get("role") or "").strip()
+    title = (user.get("title") or role or "Member").strip()
+    phone = (user.get("phone") or "—").strip()
+    email = (user.get("email") or "—").strip()
+    location = (user.get("location") or "—").strip()
+    instagram = (user.get("instagram") or "").strip()
+    facebook = (user.get("facebook") or "").strip()
 
-    if qr_png_b64:
-        qr_html = f'<img src="data:image/png;base64,{qr_png_b64}" style="width:220px;height:220px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.1);" />'
+    # Avatar (data URL or initials)
+    avatar = _avatar_data_url(user)
+    if avatar:
+        avatar_html = (
+            f'<img src="{avatar}" '
+            f'style="width:140px;height:140px;border-radius:50%;object-fit:cover;'
+            f'border:4px solid #ffffff;box-shadow:0 2px 12px rgba(0,0,0,0.10);" />'
+        )
     else:
-        qr_html = '<div style="width:220px;height:220px;border-radius:10px;background:#fee2e2;display:flex;align-items:center;justify-content:center;color:#991b1b;font-size:0.8rem;text-align:center;padding:8px;">QR unavailable</div>'
+        # Initials disc
+        initials = "".join(p[0].upper() for p in name.split()[:2] if p) or "?"
+        avatar_html = (
+            f'<div style="width:140px;height:140px;border-radius:50%;'
+            f'background:linear-gradient(135deg,#dbeafe 0%,#bfdbfe 100%);'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'font-size:3.4rem;font-weight:700;color:#475569;'
+            f'border:4px solid #ffffff;box-shadow:0 2px 12px rgba(0,0,0,0.10);">'
+            f'{initials}</div>'
+        )
 
-    social_rows = ""
+    # Contact info rows
+    def _row(icon, text):
+        return (
+            f'<div style="display:flex;align-items:flex-start;gap:14px;'
+            f'margin-bottom:14px;font-size:0.95rem;color:#1f2937;line-height:1.35;">'
+            f'<div style="flex:0 0 24px;font-size:1.1rem;line-height:1.2;'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'width:24px;height:24px;color:#334155;">{icon}</div>'
+            f'<div style="flex:1;text-transform:uppercase;letter-spacing:0.03em;'
+            f'word-break:break-word;">{text}</div></div>'
+        )
+
+    rows_html = ""
+    if location and location != "—":
+        rows_html += _row("🏠", location)
+    if phone and phone != "—":
+        rows_html += _row("📞", phone)
+    if email and email != "—":
+        rows_html += _row("✉️", email)
     if instagram:
-        ig = instagram.lstrip("@")
-        social_rows += f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;font-size:0.88rem;color:#1f2937;">
-            <span style="font-size:1.05rem;">📷</span>
-            <span style="text-transform:uppercase;letter-spacing:0.04em;font-weight:500;">{ig}</span>
-        </div>"""
+        ig = (instagram.lstrip("@")
+                       .replace("https://instagram.com/", "")
+                       .replace("http://instagram.com/", "")
+                       .replace("instagram.com/", ""))
+        if ig:
+            rows_html += _row("📷", ig)
     if facebook:
-        fb = facebook.lstrip("@")
-        social_rows += f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;font-size:0.88rem;color:#1f2937;">
-            <span style="font-size:1.05rem;">📘</span>
-            <span style="text-transform:uppercase;letter-spacing:0.04em;font-weight:500;">{fb}</span>
-        </div>"""
+        fb = (facebook.lstrip("@")
+                       .replace("https://facebook.com/", "")
+                       .replace("https://www.facebook.com/", "")
+                       .replace("http://facebook.com/", "")
+                       .replace("facebook.com/", ""))
+        if fb:
+            rows_html += _row("📘", fb)
 
     return f"""
     <div style="
-        max-width: 460px;
+        max-width: 720px;
         margin: 1rem auto;
         background: #ffffff;
-        border-radius: 14px;
-        box-shadow: 0 8px 28px rgba(0,0,0,0.12);
-        padding: 22px 24px 18px 24px;
-        text-align: center;
+        border-radius: 16px;
+        box-shadow: 0 10px 36px rgba(0,0,0,0.14);
+        padding: 28px 32px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        display: flex;
+        gap: 0;
+        align-items: stretch;
+        background-image:
+            linear-gradient(180deg, #fdfdfb 0%, #f6f4ef 100%);
     ">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-            {qr_html}
-            <div style="background:#10b981;color:white;font-size:0.55rem;font-weight:700;letter-spacing:0.06em;padding:3px 10px;border-radius:10px;margin-top:-2px;">SCAN TO VIEW ONLINE</div>
+        <div style="
+            flex: 0 0 42%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding-right: 24px;
+            text-align: center;
+        ">
+            {avatar_html}
+            <div style="
+                margin-top: 18px;
+                font-size: 1.45rem;
+                font-weight: 700;
+                color: #1e293b;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            ">{name}</div>
+            <div style="
+                margin-top: 4px;
+                font-size: 0.78rem;
+                color: #64748b;
+                letter-spacing: 0.22em;
+                text-transform: uppercase;
+            ">{title or role or 'Member'}</div>
         </div>
-        <div style="margin-top:14px;">
-            <div style="font-size:1.25rem;font-weight:700;color:#0f172a;letter-spacing:0.05em;text-transform:uppercase;">{name}</div>
-            <div style="font-size:0.72rem;color:#6b7280;letter-spacing:0.18em;text-transform:uppercase;margin-top:3px;">{title or role or 'Member'}</div>
+        <div style="
+            flex: 0 0 1px;
+            background: linear-gradient(180deg, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%);
+            margin: 0 18px;
+        "></div>
+        <div style="
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding-left: 12px;
+        ">
+            {rows_html}
         </div>
-        <div style="height:1px;background:linear-gradient(90deg,transparent,#cbd5e1,transparent);margin:14px 0;"></div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-            <div style="display:flex;align-items:center;gap:8px;font-size:0.88rem;color:#1f2937;">
-                <span style="font-size:0.95rem;">🏠</span>
-                <span style="text-transform:uppercase;letter-spacing:0.03em;font-weight:500;">{location}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:2px;font-size:0.88rem;color:#1f2937;">
-                <span style="font-size:0.95rem;">📞</span>
-                <span style="font-weight:500;">{phone}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:2px;font-size:0.82rem;color:#1f2937;word-break:break-all;">
-                <span style="font-size:0.95rem;">✉️</span>
-                <span style="text-transform:lowercase;font-weight:500;">{email}</span>
-            </div>
-            {social_rows}
-        </div>
-        <div style="margin-top:16px;font-size:0.65rem;color:#94a3b8;letter-spacing:0.04em;">
-            Powered by <strong style="color:#10b981;">EthioChain</strong>
-        </div>
+    </div>
+    <div style="
+        max-width: 720px;
+        margin: 0 auto 1rem auto;
+        text-align: right;
+        font-size: 0.72rem;
+        color: #94a3b8;
+    ">
+        <span style="
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 8px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+        ">EthioChain</span>
     </div>
     """
 
@@ -346,18 +441,12 @@ def _render_downloads(user: dict, vcard_str: str, qr_bytes: Optional[bytes]) -> 
     c1, c2, c3 = st.columns(3)
     safe_name = _safe_filename(user.get("full_name", ""))
 
-    # 1. Card PNG
+    # 1. Card PNG (no QR embedded — it's a separate download)
     with c1:
         png_bytes = None
         try:
             from utils.card_image import render_card_to_png
-            # Build the URL so the QR on the downloaded card also points
-            # to the public page
-            public_url = build_public_card_url(user)
-            png_bytes = render_card_to_png(
-                user,
-                qr_data=public_url or vcard_str,
-            )
+            png_bytes = render_card_to_png(user)
         except Exception:
             png_bytes = None
         if png_bytes:
@@ -377,16 +466,23 @@ def _render_downloads(user: dict, vcard_str: str, qr_bytes: Optional[bytes]) -> 
                 help="Pillow isn't installed.",
             )
 
-    # 2. QR code PNG (encodes the public URL)
+    # 2. QR code PNG (separate, framed, with "SCAN ME" label)
     with c2:
-        if qr_bytes:
+        qr_png = None
+        try:
+            from utils.card_image import render_qr_only_png
+            public_url = build_public_card_url(user)
+            qr_png = render_qr_only_png(public_url or vcard_str)
+        except Exception:
+            qr_png = qr_bytes  # fall back to raw QR
+        if qr_png:
             st.download_button(
                 label="⬇️ Download QR (PNG)",
-                data=qr_bytes,
+                data=qr_png,
                 file_name=f"qr_{safe_name}.png",
                 mime="image/png",
                 use_container_width=True,
-                help="Download the QR code (encodes your public card link).",
+                help="Download the QR code separately (encodes your public card link).",
             )
         else:
             st.button(
