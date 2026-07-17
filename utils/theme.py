@@ -65,10 +65,6 @@ _GLOBAL_CSS = """<style>
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
 }
-@keyframes fadeInLeft {
-    from { opacity: 0; transform: translateX(-12px); }
-    to { opacity: 1; transform: translateX(0); }
-}
 @keyframes fadeInRight {
     from { opacity: 0; transform: translateX(12px); }
     to { opacity: 1; transform: translateX(0); }
@@ -356,6 +352,42 @@ _GLOBAL_CSS = """<style>
 /* ===== Banner / page header animation ===== */
 .page-header, .auth-card, .role-card {
     animation: scaleIn 0.35s ease-out !important;
+}
+
+/* ===== Sidebar nav buttons — beautiful nav cards ===== */
+[data-testid="stSidebar"] .stButton > button {
+    font-size: 0.92rem !important;
+    font-weight: 600 !important;
+    padding: 0.65rem 1rem !important;
+    border-radius: 10px !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    position: relative !important;
+    transition: all 0.2s ease !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    color: #475569 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+    margin-bottom: 4px !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #f0fdf4 !important;
+    border-color: #6ee7b7 !important;
+    color: #047857 !important;
+    transform: translateX(2px) !important;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.12) !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
+    border-color: #10b981 !important;
+    border-left: 4px solid #10b981 !important;
+    color: #047857 !important;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2) !important;
+    font-weight: 700 !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
+    transform: translateX(2px) !important;
 }
 
 /* ===== Decorative animated badge (pulsing dot) ===== */
@@ -984,6 +1016,30 @@ a:hover { color: #6ee7b7 !important; }
     height: 2px !important;
     background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.4), transparent) !important;
     margin: 1.5rem 0 !important;
+}
+
+/* ===== Sidebar nav buttons (dark mode) ===== */
+[data-testid="stSidebar"] .stButton > button {
+    background: rgba(15, 23, 42, 0.6) !important;
+    border: 1px solid #334155 !important;
+    color: #cbd5e1 !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(16, 185, 129, 0.15) !important;
+    border-color: #10b981 !important;
+    color: #6ee7b7 !important;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2) !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(52, 211, 153, 0.15) 100%) !important;
+    border-color: #10b981 !important;
+    border-left: 4px solid #34d399 !important;
+    color: #6ee7b7 !important;
+    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3) !important;
+    font-weight: 700 !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(52, 211, 153, 0.2) 100%) !important;
 }
 </style>"""
 
