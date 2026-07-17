@@ -105,20 +105,20 @@ def render_shared_marketplace():
             image_url = p.get("image_url")
             if image_url:
                 img_html = (
-                    f"<div style='height:176px; overflow:hidden; border-radius:10px 10px 0 0; margin:-1rem -1rem 0.75rem -1rem; "
+                    f"<div style='height:280px; overflow:hidden; border-radius:10px 10px 0 0; margin:-1rem -1rem 0.75rem -1rem; "
                     f"position:relative;'>"
-                    f"<img src='{image_url}' style='width:100%; height:100%; object-fit:cover; transition:transform 0.4s ease;' "
+                    f"<img src='{image_url}' style='width:100%; height:100%; object-fit:contain; background:#f8fafc; transition:transform 0.4s ease;' "
                     f"onmouseover=\"this.style.transform='scale(1.06)'\" onmouseout=\"this.style.transform='scale(1)'\" />"
                     f"<div style='position:absolute; inset:0; "
-                    f"background:linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.45) 100%);'></div>"
+                    f"background:linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.35) 100%); pointer-events:none;'></div>"
                     f"</div>"
                 )
             else:
                 img_html = (
-                    "<div style='height:176px; background:linear-gradient(135deg,#a7f3d0 0%, #6ee7b7 50%, #34d399 100%); "
+                    "<div style='height:280px; background:linear-gradient(135deg,#a7f3d0 0%, #6ee7b7 50%, #34d399 100%); "
                     "background-size:200% 200%; animation:gradientShift 8s ease infinite; "
                     "border-radius:10px 10px 0 0; margin:-1rem -1rem 0.75rem -1rem; "
-                    "display:flex; align-items:center; justify-content:center; font-size:3.5rem; "
+                    "display:flex; align-items:center; justify-content:center; font-size:4.5rem; "
                     "box-shadow: inset 0 0 30px rgba(255,255,255,0.3);'>📦</div>"
                 )
 
