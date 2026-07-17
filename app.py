@@ -400,37 +400,117 @@ def render_sidebar():
 
 
 def _role_nav(role: str, force_nav: str | None = None) -> str | None:
-    """Returns the selected page key."""
+    """Returns the selected page key.
+
+    Renders a beautiful custom navigation menu in the sidebar using
+    styled buttons. The selected button gets a green left border +
+    emerald background tint + bolder text. Hover lifts the card and
+    adds a subtle shadow.
+    """
     common_tabs = {
-        "marketplace": "🛒 Marketplace",
-        "ai_insights": "🤖 AI Insights",
-        "assistant": "💬 AI Assistant",
-        "notifications": "🔔 Notifications",
-        "profile": "👤 Profile",
+        "marketplace": ("🛒", "Marketplace"),
+        "ai_insights": ("🤖", "AI Insights"),
+        "assistant":   ("💬", "AI Assistant"),
+        "notifications": ("🔔", "Notifications"),
+        "profile":     ("👤", "Profile"),
     }
     if role == "producer":
         opts = ["dashboard", "inventory", "orders", "merchant_match"] + list(common_tabs.keys())
-        labels = {"dashboard": "📊 Dashboard", "inventory": "📦 Inventory", "orders": "🛒 Orders", "merchant_match": "🤝 Merchant Match", **common_tabs}
+        tabs = {
+            "dashboard":      ("📊", "Dashboard"),
+            "inventory":      ("📦", "Inventory"),
+            "orders":         ("🛒", "Orders"),
+            "merchant_match": ("🤝", "Merchant Match"),
+            **common_tabs,
+        }
         key = "producer_nav"
     elif role == "merchant":
         opts = ["dashboard", "orders", "merchant_requests"] + list(common_tabs.keys())
-        labels = {"dashboard": "📊 Dashboard", "orders": "🛍️ My Orders", "merchant_requests": "📨 Match Requests", **common_tabs}
+        tabs = {
+            "dashboard":         ("📊", "Dashboard"),
+            "orders":            ("🛍️", "My Orders"),
+            "merchant_requests": ("📨", "Match Requests"),
+            **common_tabs,
+        }
         key = "merchant_nav"
     elif role == "customer":
         opts = ["dashboard", "marketplace", "cart", "orders", "ai_insights", "assistant", "notifications", "profile"]
-        labels = {"dashboard": "📊 Dashboard", "marketplace": "🛒 Marketplace", "cart": "🛒 Cart", "orders": "📦 My Orders", "ai_insights": "🤖 AI Insights", "assistant": "💬 AI Assistant", "notifications": "🔔 Notifications", "profile": "👤 Profile"}
+        tabs = {
+            "dashboard":     ("📊", "Dashboard"),
+            "marketplace":   ("🛒", "Marketplace"),
+            "cart":          ("🛒", "Cart"),
+            "orders":        ("📦", "My Orders"),
+            "ai_insights":   ("🤖", "AI Insights"),
+            "assistant":     ("💬", "AI Assistant"),
+            "notifications": ("🔔", "Notifications"),
+            "profile":       ("👤", "Profile"),
+        }
         key = "customer_nav"
     elif role == "admin":
         opts = ["dashboard", "management", "fraud"] + list(common_tabs.keys())
-        labels = {"dashboard": "📊 Dashboard", "management": "⚙️ Management", "fraud": "🚨 Fraud Center", **common_tabs}
+        tabs = {
+            "dashboard":   ("📊", "Dashboard"),
+            "management":  ("⚙️", "Management"),
+            "fraud":       ("🚨", "Fraud Center"),
+            **common_tabs,
+        }
         key = "admin_nav"
     else:
         return None
 
-    if force_nav and force_nav in opts:
-        st.session_state[key] = force_nav
+    # Make sure the current session value is in opts (defensive)
+    current = st.session_state.get(key)
+    if current not in opts:
+        current = opts[0]
+        st.session_state[key] = current
 
-    return st.radio("Navigation", options=opts, format_func=lambda x: labels[x], key=key, help="Choose a section to navigate to.")
+    # Header label
+    st.markdown(
+        """
+        <div style='
+            display:flex; align-items:center; gap:6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #047857;
+            margin: 1.25rem 0 0.5rem 0;
+            padding-left: 4px;
+        '>
+            <span style='
+                display:inline-block; width:18px; height:18px; line-height:18px;
+                text-align:center;
+                background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+                border-radius: 5px;
+                font-size: 0.65rem;
+                box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+            '>🧭</span>
+            Navigation
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Render each nav item as a clickable "card". The selected one
+    # is highlighted with a green left border + emerald background.
+    for opt in opts:
+        emoji, label = tabs[opt]
+        is_selected = opt == st.session_state.get(key)
+
+        # Use a Streamlit button but style it to look like a nav card.
+        # The button label is the emoji + label. We use type="primary"
+        # for the selected one and "secondary" for the others to
+        # get different visual treatments.
+        if st.button(
+            f"{emoji}  {label}",
+            key=f"nav_{role}_{opt}",
+            use_container_width=True,
+            type="primary" if is_selected else "secondary",
+        ):
+            st.session_state[key] = opt
+            st.rerun()
+
+    return st.session_state.get(key)
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +746,7 @@ def main():
             """<style>
             [data-testid="stSidebar"] { display: none; }
             [data-testid="stSidebarCollapsedControl"] { display: none; }
-            .block-container { padding-top: 2rem; max-width: 800px; }
+            .block-container { padding-top: 0.5rem; max-width: 540px; }
             </style>""",
             unsafe_allow_html=True,
         )
