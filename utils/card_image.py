@@ -2,28 +2,32 @@
 Render the digital business card to a PNG image using Pillow (PIL).
 
 This is the "offline" renderer — no headless browser, no external
-service. We use Pillow's ``ImageDraw`` to paint the card on a 1080x540
-canvas (matching the 2:1 aspect ratio of the user's reference design),
-then return the PNG bytes for download.
+service. We use Pillow's ``ImageDraw`` to paint the card on a 540x900
+canvas (taller than wide, so the QR goes on top and all info flows
+vertically below — matching the user's "stack everything under the
+QR" requirement).
 
-The card layout follows the user's reference design:
-    ┌──────────────────────────────────────────────────────┐
-    │                                                      │
-    │     ┌─────────┐     │   ABRAHAM SMITH               │
-    │     │         │     │                               │
-    │     │   QR    │     │   PRODUCER                    │
-    │     │         │     │                               │
-    │     └─────────┘     │   🏠  12 Your Business Road  │
-    │                     │   📞  +251 911 123 456        │
-    │      ABRAHAM SMITH   │   ✉️  abraham@gmail.com       │
-    │                      │   📷  ABRAHAM                │
-    │                      │   📘  ABRAHAM.SMITH           │
-    │                      │                               │
-    └──────────────────────────────────────────────────────┘
-
-The QR code is the main feature on the left — when scanned it imports
-all the contact info into the scanner's phone. The right side shows
-the same info as text so people can read it at a glance.
+The card layout:
+    ┌────────────────────────────────┐
+    │                                │
+    │     ┌───────────────┐          │
+    │     │               │          │
+    │     │      QR       │          │
+    │     │               │          │
+    │     └───────────────┘          │
+    │      SCAN TO SAVE              │
+    │                                │
+    │      ABRAHAM SMITH             │
+    │      SENIOR PRODUCER           │
+    │                                │
+    │   🏠  12 Your Business Road    │
+    │   📞  +251 911 123 456         │
+    │   ✉️  abraham@gmail.com        │
+    │   📷  @abraham                 │
+    │   📘  abraham.smith            │
+    │                                │
+    │      ── Powered by EthioChain ─│
+    └────────────────────────────────┘
 
 Why Pillow instead of HTML-to-image?
   * No system dependencies (no Chromium, no GTK)
@@ -112,21 +116,7 @@ def _wrap_text(draw, text: str, font, max_width: int) -> list:
     return lines
 
 
-def _fetch_avatar_bytes(url: str) -> Optional[bytes]:
-    """Best-effort fetch of the avatar image. Returns None on any failure."""
-    if not url:
-        return None
-    try:
-        import requests
-        r = requests.get(url, timeout=4)
-        if r.ok and r.content:
-            return r.content
-    except Exception:
-        pass
-    return None
-
-
-def _generate_qr_png(data: str, size: int = 540) -> Optional[Image.Image]:
+def _generate_qr_png(data: str, target_size: int = 320) -> Optional[Image.Image]:
     """Generate a QR code as a PIL Image (or None if qrcode isn't installed).
 
     Returns a square ``Image`` with the QR pattern on a white background.
@@ -138,18 +128,16 @@ def _generate_qr_png(data: str, size: int = 540) -> Optional[Image.Image]:
         qr = qrcode.QRCode(
             version=None,
             error_correction=qrcode.constants.ERROR_CORRECT_H,
-            box_size=8,
+            box_size=10,
             border=2,
         )
         qr.add_data(data)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white",
                             image_factory=PilImage)
-        # qrcode's PIL factory returns a PIL Image, but it may be in
-        # 'L' (luminance) mode — convert to 'RGB' for our use.
         if hasattr(img, "convert"):
             return img.convert("RGB")
-        # Fallback for non-PIL backends: save via tempfile
+        # Fallback
         import tempfile, os
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
             tmp_path = tf.name
@@ -222,14 +210,23 @@ def _draw_icon(draw, x, y, kind, size=18, color=(75, 85, 99)):
 # -----------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------
-def render_card_to_png(user: dict, vcard: str = "", width: int = 1080, height: int = 540) -> Optional[bytes]:
+def render_card_to_png(
+    user: dict,
+    vcard: str = "",
+    qr_data: str = "",
+    width: int = 540,
+    height: int = 900,
+) -> Optional[bytes]:
     """Render the business card to a PNG byte string.
 
     Args:
-        user:   the user dict (name, email, phone, etc.)
-        vcard:  the vCard string to encode in the QR. If empty, we
-                build it from ``user`` on the fly.
-        width, height: canvas dimensions (default 1080x540 = 2:1)
+        user:    the user dict (name, email, phone, etc.)
+        vcard:   (deprecated) the vCard string to encode in the QR
+        qr_data: the string to encode in the QR code. Defaults to the
+                 public business card URL (``?card=<user_id>``) so
+                 scanning opens the online version. Falls back to the
+                 vCard if the user ID isn't available.
+        width, height: canvas dimensions (default 540x900 — tall card)
 
     Returns ``None`` if Pillow isn't installed.
     """
@@ -246,12 +243,15 @@ def render_card_to_png(user: dict, vcard: str = "", width: int = 1080, height: i
     instagram = (user.get("instagram") or "").strip()
     facebook  = (user.get("facebook") or "").strip()
 
-    # Build vCard for the QR if not provided
-    if not vcard:
-        from utils.business_card import build_vcard
-        vcard = build_vcard(user)
+    # Build the data to encode in the QR
+    if not qr_data:
+        if vcard:
+            qr_data = vcard
+        else:
+            from utils.business_card import build_vcard
+            qr_data = build_vcard(user)
 
-    # ── Card canvas ────────────────────────────────────────
+    # ── Card canvas (portrait) ─────────────────────────────
     img = Image.new("RGB", (width, height), (255, 255, 255))
 
     # Subtle paper texture — faint horizontal banding
@@ -262,138 +262,142 @@ def render_card_to_png(user: dict, vcard: str = "", width: int = 1080, height: i
             for dx in range(min(8, width - x)):
                 texture.putpixel((x + dx, y), (v, v - 2, v - 4))
 
-    # Vignette
+    # Vignette (subtle, since the card is small)
     vignette = Image.new("L", (width, height), 0)
     vd = ImageDraw.Draw(vignette)
     vd.rectangle((0, 0, width, height), fill=80)
-    vd.rectangle((40, 40, width - 40, height - 40), fill=140)
-    vd.rectangle((80, 80, width - 80, height - 80), fill=220)
-    vignette = vignette.filter(ImageFilter.GaussianBlur(40))
+    vd.rectangle((20, 20, width - 20, height - 20), fill=220)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(20))
     img = Image.composite(img, texture, vignette)
 
     draw = ImageDraw.Draw(img)
 
     # ── Fonts ──────────────────────────────────────────────
-    f_name      = _find_font(_FONT_BOLD_CANDIDATES,    36)
-    f_title     = _find_font(_FONT_REGULAR_CANDIDATES, 18)
-    f_body      = _find_font(_FONT_REGULAR_CANDIDATES, 22)
-    f_body_bold = _find_font(_FONT_BOLD_CANDIDATES,    22)
-    f_body_sm   = _find_font(_FONT_REGULAR_CANDIDATES, 19)
-    f_qr_label  = _find_font(_FONT_BOLD_CANDIDATES,    14)
+    f_name      = _find_font(_FONT_BOLD_CANDIDATES,    26)
+    f_title     = _find_font(_FONT_REGULAR_CANDIDATES, 13)
+    f_body      = _find_font(_FONT_REGULAR_CANDIDATES, 15)
+    f_body_bold = _find_font(_FONT_BOLD_CANDIDATES,    15)
+    f_body_sm   = _find_font(_FONT_REGULAR_CANDIDATES, 14)
+    f_qr_label  = _find_font(_FONT_BOLD_CANDIDATES,    10)
+    f_footer    = _find_font(_FONT_REGULAR_CANDIDATES, 10)
 
-    # ── Layout: 2 columns ──────────────────────────────────
-    # Left  ~46%: QR code + name + title
-    # Right ~54%: contact details
-    margin = 50
-    col_left_x = margin
-    col_left_w = 420
-    col_divider_x = col_left_x + col_left_w
-    col_right_x = col_divider_x + 32
-    col_right_w = width - col_right_x - margin
+    # ── Layout: single column, everything stacked ──────────
+    margin = 40
+    content_w = width - 2 * margin
 
-    # ── QR CODE on the LEFT ────────────────────────────────
-    qr_size = 320
-    qr_x = col_left_x + (col_left_w - qr_size) // 2
-    qr_y = 60
+    # ── QR CODE at the top (centered) ───────────────────────
+    qr_size = min(content_w - 40, 340)
+    qr_x = (width - qr_size) // 2
+    qr_y = margin + 20
     qr_box = (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size)
 
-    qr_img = _generate_qr_png(vcard, size=qr_size)
+    qr_img = _generate_qr_png(qr_data, target_size=qr_size)
     if qr_img is not None:
-        # Resize the QR to exactly qr_size × qr_size
         qr_img = qr_img.resize((qr_size, qr_size), Image.LANCZOS)
-        # Add a thin border around the QR
-        border = 8
+        border = 6
         bordered = Image.new("RGB",
                               (qr_size + 2 * border, qr_size + 2 * border),
                               (255, 255, 255))
         bordered.paste(qr_img, (border, border))
         img.paste(bordered, qr_box[:2])
-        # "SCAN ME" label under the QR
-        scan_label = "SCAN TO SAVE CONTACT"
+        # "SCAN TO SAVE" pill label
+        scan_label = "SCAN TO VIEW ONLINE"
         sl_bbox = draw.textbbox((0, 0), scan_label, font=f_qr_label)
         sl_w = sl_bbox[2] - sl_bbox[0]
         sl_x = qr_x + (qr_size - sl_w) // 2
         sl_y = qr_y + qr_size + 14
-        # Subtle pill background
-        pad_x, pad_y = 12, 5
+        pad_x, pad_y = 10, 4
         pill_w = sl_w + 2 * pad_x
         pill_h = (sl_bbox[3] - sl_bbox[1]) + 2 * pad_y
         draw.rounded_rectangle(
             [sl_x - pad_x, sl_y - pad_y,
              sl_x - pad_x + pill_w, sl_y - pad_y + pill_h],
-            radius=8, fill=(16, 185, 129),
+            radius=7, fill=(16, 185, 129),
         )
         draw.text((sl_x, sl_y), scan_label, font=f_qr_label, fill=(255, 255, 255))
     else:
-        # Fallback: show a placeholder if qrcode isn't installed
+        # Fallback
         draw.rounded_rectangle(
             list(qr_box), radius=10, outline=(180, 180, 180), width=2,
             fill=(245, 245, 245),
         )
-        msg = "QR unavailable\ninstall qrcode[pil]"
-        f_fb = _find_font(_FONT_BOLD_CANDIDATES, 18)
-        for li, line in enumerate(msg.split("\n")):
-            bb = draw.textbbox((0, 0), line, font=f_fb)
-            tw = bb[2] - bb[0]
-            draw.text(
-                (qr_x + (qr_size - tw) // 2,
-                 qr_y + qr_size // 2 - 20 + li * 26),
-                line, font=f_fb, fill=(120, 120, 120),
-            )
+        msg = "QR unavailable"
+        bb = draw.textbbox((0, 0), msg, font=f_body)
+        tw = bb[2] - bb[0]
+        draw.text(
+            (qr_x + (qr_size - tw) // 2, qr_y + qr_size // 2 - 8),
+            msg, font=f_body, fill=(120, 120, 120),
+        )
 
-    # ── Name + title (below the QR, centered) ─────────────
-    name_y = qr_box[3] + 56  # extra space for the SCAN ME pill
+    # ── Name + title (centered, below QR) ─────────────────
+    name_y = qr_box[3] + 56
     name_bbox = draw.textbbox((0, 0), name.upper(), font=f_name)
     name_w = name_bbox[2] - name_bbox[0]
-    name_x = col_left_x + (col_left_w - name_w) // 2
+    name_x = (width - name_w) // 2
     draw.text((name_x, name_y), name.upper(), font=f_name, fill=(15, 23, 42))
 
-    title_y = name_y + 48
+    title_y = name_y + 36
     title_bbox = draw.textbbox((0, 0), title.upper(), font=f_title)
     title_w = title_bbox[2] - title_bbox[0]
-    title_x = col_left_x + (col_left_w - title_w) // 2
+    title_x = (width - title_w) // 2
     draw.text((title_x, title_y), title.upper(), font=f_title, fill=(107, 114, 128))
 
-    # ── Divider line ──────────────────────────────────────
-    div_top = 60
-    div_bot = height - 60
+    # Decorative line under the name
+    line_y = title_y + 24
     draw.line(
-        [(col_divider_x, div_top), (col_divider_x, div_bot)],
-        fill=(203, 213, 225), width=1,
+        [(width // 2 - 30, line_y), (width // 2 + 30, line_y)],
+        fill=(16, 185, 129), width=2,
     )
 
-    # ── Contact info (right column) ───────────────────────
-    info_x = col_right_x
-    info_y_start = 90
-    icon_size = 24
-    icon_gap = 18
+    # ── Contact info (stacked, centered) ───────────────────
+    info_x = margin + 6
+    icon_size = 16
+    icon_gap = 12
+    max_text_w = content_w - icon_size - icon_gap - 10
 
     def _draw_row(y, kind, text, font, fill=(31, 41, 55)):
-        _draw_icon(draw, info_x, y, kind, size=icon_size, color=(75, 85, 99))
-        text_x = info_x + icon_size + icon_gap
-        max_text_w = col_right_w - icon_size - icon_gap
+        # Center the icon + text together as a single line
+        text_bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = text_bbox[2] - text_bbox[0]
+        row_w = icon_size + icon_gap + text_w
+        row_x = (width - row_w) // 2
+
+        _draw_icon(draw, row_x, y, kind, size=icon_size, color=(75, 85, 99))
+        text_x = row_x + icon_size + icon_gap
+        # Wrap text to max_text_w
         lines = _wrap_text(draw, text, font, max_text_w)
         for li, line in enumerate(lines):
-            draw.text((text_x, y + 2 + li * 26), line, font=font, fill=fill)
-        return max(icon_size, len(lines) * 26 + 4)
+            draw.text((text_x, y + 2 + li * 20), line, font=font, fill=fill)
+        return max(icon_size, len(lines) * 20 + 4)
 
-    y = info_y_start
-    y += _draw_row(y, "home", location.upper(), f_body_bold)
-    y += 18
-    y += _draw_row(y, "phone", phone, f_body_bold)
-    y += 18
-    y += _draw_row(y, "email", email, f_body_sm, fill=(31, 41, 55))
+    y = line_y + 24
+    items = [
+        ("home",      location.upper(),    f_body_bold),
+        ("phone",     phone,              f_body_bold),
+        ("email",     email,              f_body_sm),
+    ]
     if instagram:
         ig = (instagram.lstrip("@")
                        .replace("https://instagram.com/", "")
                        .replace("http://instagram.com/", ""))
-        y += 18 + _draw_row(y, "instagram", ig.upper(), f_body_bold)
+        items.append(("instagram", ig.upper(), f_body_bold))
     if facebook:
         fb = (facebook.lstrip("@")
                        .replace("https://facebook.com/", "")
                        .replace("https://www.facebook.com/", "")
                        .replace("http://facebook.com/", ""))
-        y += 18 + _draw_row(y, "facebook", fb.upper(), f_body_bold)
+        items.append(("facebook", fb.upper(), f_body_bold))
+
+    for kind, text, font in items:
+        y += _draw_row(y, kind, text, font)
+        y += 10
+
+    # ── Footer ("Powered by EthioChain") ──────────────────
+    footer_y = height - margin - 8
+    footer = "Powered by EthioChain"
+    fb = draw.textbbox((0, 0), footer, font=f_footer)
+    fw = fb[2] - fb[0]
+    draw.text(((width - fw) // 2, footer_y), footer, font=f_footer, fill=(148, 163, 184))
 
     # ── Save and return ──────────────────────────────────
     buf = io.BytesIO()
