@@ -756,15 +756,54 @@ def main():
                 st.error(f"Failed to load public card: {e}")
                 return
 
-        # Not logged in → show login page (hide sidebar)
+        # Not logged in → show login page (hide sidebar).
+        # Use ``padding-top: 2.5rem`` so the welcome / hero section is
+        # fully visible (was 0.5rem — the green logo pill was being
+        # clipped by the viewport top on first load).
+        # Also inject a tiny ``st.components.v1.html`` iframe that runs
+        # a scroll-to-top script on every page render, so the welcome
+        # section is always scrolled into view (Streamlit's `st.markdown`
+        # strips ``<script>`` tags, so we need an iframe to run JS).
         st.markdown(
             """<style>
             [data-testid="stSidebar"] { display: none; }
             [data-testid="stSidebarCollapsedControl"] { display: none; }
-            .block-container { padding-top: 0.5rem; max-width: 540px; }
+            .block-container { padding-top: 2.5rem; max-width: 540px; }
+            /* Hide the scroll-to-top iframe — it's invisible by design */
+            iframe[title="st_scroll_helper"] { display: none !important; }
             </style>""",
             unsafe_allow_html=True,
         )
+        try:
+            import streamlit.components.v1 as components
+            components.html(
+                """<script>
+                (function() {
+                    const scrollToTop = () => {
+                        try {
+                            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                            const main = document.querySelector('section.main');
+                            if (main) main.scrollTop = 0;
+                        } catch (e) {}
+                    };
+                    scrollToTop();
+                    // Re-run on any DOM mutation (Streamlit rerenders)
+                    const observer = new MutationObserver(() => {
+                        clearTimeout(window.__stScrollT);
+                        window.__stScrollT = setTimeout(scrollToTop, 50);
+                    });
+                    if (document.body) {
+                        observer.observe(document.body, { childList: true, subtree: true });
+                    }
+                    setTimeout(scrollToTop, 100);
+                    setTimeout(scrollToTop, 500);
+                })();
+                </script>""",
+                height=0,
+                width=0,
+            )
+        except Exception:
+            pass
         render_auth_page()
         return
 
