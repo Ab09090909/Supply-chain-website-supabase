@@ -70,7 +70,7 @@ def render_public_card_page(card_id: str) -> None:
         client = _get_client()
         r = client.table("profiles").select(
             "id, full_name, email, phone, location, role, company, "
-            "avatar_url, is_verified"
+            "avatar_url, is_verified, instagram, facebook"
         ).eq("id", card_id).maybe_single().execute()
         user = r.data if r and r.data else None
     except Exception as e:
