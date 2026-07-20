@@ -43,3 +43,7 @@ logs/
 # Supabase local
 supabase/.branches
 supabase/.temp
+
+# Archives (don't ship tarballs)
+*.tar.gz
+*.zip
