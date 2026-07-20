@@ -39,7 +39,18 @@ def _inject_css(css: str):
 # ---------------------------------------------------------------------------
 # GLOBAL CSS — applies to both themes (transitions, animations, polish)
 # ---------------------------------------------------------------------------
+# Load Inter font from Google Fonts (the modern SaaS font, used by
+# Linear, Vercel, Stripe, Notion, GitHub, etc.). Falls back to the
+# system sans-serif stack if Google Fonts is unreachable.
 _GLOBAL_CSS = """<style>
+/* ===== Inter font (modern commercial typography) ===== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+/* Fallback font stack (Inter → system → Helvetica) */
+:root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+}
+* { font-family: var(--font-sans) !important; }
 /* ===== Keyframe animations ===== */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(12px); }
@@ -185,35 +196,54 @@ _GLOBAL_CSS = """<style>
     box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4) !important;
 }
 
-/* ===== Headings — modern hierarchy ===== */
+/* ===== Headings — modern hierarchy (Inter font) ===== */
 .stMarkdown h1 {
-    font-size: 1.75rem !important;
+    font-size: 1.85rem !important;
     font-weight: 800 !important;
-    letter-spacing: -0.02em !important;
+    letter-spacing: -0.028em !important;
+    line-height: 1.18 !important;
     animation: fadeInDown 0.4s ease-out !important;
+    font-feature-settings: "cv11", "ss01", "ss03" !important;  /* Inter stylistic sets */
 }
 .stMarkdown h2 {
-    font-size: 1.4rem !important;
+    font-size: 1.45rem !important;
     font-weight: 700 !important;
-    letter-spacing: -0.01em !important;
+    letter-spacing: -0.018em !important;
+    line-height: 1.25 !important;
 }
 .stMarkdown h3 {
-    font-size: 1.15rem !important;
+    font-size: 1.2rem !important;
     font-weight: 700 !important;
+    letter-spacing: -0.012em !important;
+    line-height: 1.3 !important;
 }
 .stMarkdown h4 {
-    font-size: 1rem !important;
+    font-size: 1.025rem !important;
     font-weight: 600 !important;
+    letter-spacing: -0.008em !important;
+    line-height: 1.35 !important;
 }
 .stMarkdown h5 {
     font-size: 0.9rem !important;
     font-weight: 600 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.04em !important;
+    letter-spacing: 0.045em !important;
+    line-height: 1.4 !important;
 }
 .stMarkdown h6 {
     font-size: 0.85rem !important;
     font-weight: 600 !important;
+    letter-spacing: 0 !important;
+}
+
+/* ===== Body text — proper line-height + measure ===== */
+.stMarkdown p, .stMarkdown li {
+    line-height: 1.6 !important;
+    letter-spacing: -0.005em !important;
+}
+.stMarkdown strong, .stMarkdown b {
+    font-weight: 700 !important;
+    letter-spacing: -0.01em !important;
 }
 
 /* ===== Metrics — animated KPI cards ===== */
