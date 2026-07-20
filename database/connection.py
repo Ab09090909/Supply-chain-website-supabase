@@ -101,13 +101,21 @@ _KEY_ALIASES = {
     "GROQ_API_KEY": ["GROQ_API_KEY", "GROQ_KEY", "GROQ_TOKEN"],
 }
 
+# Cache for config lookups (avoids re-reading env vars + secrets.toml on every call)
+_config_cache: Dict[str, Optional[str]] = {}
+
 
 def _get_config(key: str) -> Optional[str]:
     """Look up a config value, accepting several aliases and rejecting
     obvious placeholder values like ``your-…`` or ``eyJ-replace-…``.
 
     Order: 1) os.environ, 2) st.secrets, 3) .streamlit/secrets.toml.
+    Results are cached in _config_cache so we don't re-read env vars
+    and st.secrets on every Streamlit rerun.
     """
+    if key in _config_cache:
+        return _config_cache[key]
+
     aliases = _KEY_ALIASES.get(key, [key])
     # Reject any value that looks like a placeholder
     placeholder_prefixes = ("your-", "eyJ-replace", "gsk-replace", "replace-")
@@ -123,20 +131,26 @@ def _get_config(key: str) -> Optional[str]:
     for alias in aliases:
         val = os.environ.get(alias)
         if _is_real(val):
+            _config_cache[key] = val
             return val
     if st is not None:
         try:
             for alias in aliases:
                 val = st.secrets.get(alias)
                 if _is_real(val):
-                    return str(val)
+                    result = str(val)
+                    _config_cache[key] = result
+                    return result
         except Exception:
             pass
     secrets = _read_secrets_toml()
     for alias in aliases:
         val = secrets.get(alias)
         if _is_real(val):
-            return str(val)
+            result = str(val)
+            _config_cache[key] = result
+            return result
+    _config_cache[key] = None
     return None
 
 
