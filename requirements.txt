@@ -1,6 +1,5 @@
-# AI Supply Chain Platform - Requirements for Streamlit Cloud
+# AI Supply Chain Platform - Requirements (Streamlit Cloud + Render)
 # Core + ML dependencies
-
 streamlit>=1.39.0
 requests>=2.31.0
 python-dotenv>=1.0.1
@@ -13,4 +12,7 @@ groq>=0.4.0
 qrcode>=7.4
 pypng>=0.20220715.0
 Pillow>=10.0.0
-
+# Live analytics dashboard (interactive Plotly charts)
+plotly>=5.18.0
+# TOML parser for secrets.toml (stdlib in Python 3.11+, backport for 3.10)
+tomli>=2.0.0; python_version < "3.11"
