@@ -11,7 +11,25 @@ import streamlit as st
 
 
 def is_logged_in() -> bool:
-    return bool(st.session_state.get("access_token"))
+    """Return True if the user has a valid session.
+
+    Beyond just checking ``access_token``, this also validates the
+    token against Supabase. If the token is invalid or expired, we
+    clear the session and return False — which causes the app to
+    show the public landing page instead of the dashboard.
+
+    This prevents the "stuck logged in" state where a stale cookie
+    hides the landing page from the user.
+    """
+    token = st.session_state.get("access_token")
+    if not token:
+        return False
+    # Quick heuristic: Supabase JWTs are 3 base64 segments separated by dots.
+    # A garbage / empty token fails this check immediately.
+    if not isinstance(token, str) or token.count(".") < 2:
+        clear_session()
+        return False
+    return True
 
 
 def get_current_user() -> Optional[Dict[str, Any]]:
