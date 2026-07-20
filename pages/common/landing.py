@@ -19,11 +19,31 @@ from __future__ import annotations
 
 import streamlit as st
 
-from utils.ui import (
-    hero_section, feature_grid, card, tag, FONT_STACK,
-    _html, COLORS, GRADIENTS,
-)
-from utils.app_url import get_app_url
+try:
+    from utils.ui import (
+        hero_section, feature_grid, card, tag, FONT_STACK,
+        _html, COLORS, GRADIENTS,
+    )
+except ImportError:
+    # Fallbacks if ui.py is missing new components (old version)
+    from utils.ui import _html, page_header
+    hero_section = None
+    feature_grid = None
+    card = None
+    tag = None
+    FONT_STACK = "'Inter', sans-serif"
+    COLORS = {
+        "slate_50": "#f8fafc", "slate_200": "#e2e8f0", "slate_500": "#64748b",
+        "slate_600": "#475569", "slate_700": "#334155", "slate_900": "#0f172a",
+    }
+    GRADIENTS = {"emerald": "linear-gradient(135deg,#10b981,#059669)"}
+
+try:
+    from utils.app_url import get_app_url
+except ImportError:
+    def get_app_url():
+        import os
+        return os.environ.get("APP_URL", os.environ.get("RENDER_EXTERNAL_URL", "https://eschain.streamlit.app"))
 
 
 # ---------------------------------------------------------------------------
@@ -202,14 +222,39 @@ def render_landing_page() -> None:
     """)
 
     # ---- HERO ----
-    hero_section(
-        eyebrow=HERO_EYEBROW,
-        title=HERO_TITLE,
-        subtitle=HERO_SUBTITLE,
-        primary_cta=HERO_PRIMARY_CTA,
-        secondary_cta=HERO_SECONDARY_CTA,
-        badge_icon="✨",
-    )
+    if hero_section:
+        hero_section(
+            eyebrow=HERO_EYEBROW,
+            title=HERO_TITLE,
+            subtitle=HERO_SUBTITLE,
+            primary_cta=HERO_PRIMARY_CTA,
+            secondary_cta=HERO_SECONDARY_CTA,
+            badge_icon="✨",
+        )
+    else:
+        # Minimal fallback hero
+        _html(f"""
+        <div style='text-align:center;padding:2rem 0 1rem 0;'>
+            <div style='display:inline-block;background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%);
+                color:#047857;padding:0.25rem 0.7rem;border-radius:9999px;font-size:0.7rem;
+                font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+                border:1px solid #a7f3d0;margin-bottom:0.75rem;'>{HERO_EYEBROW}</div>
+            <h1 style='font-size:2.5rem;font-weight:800;color:{COLORS["slate_900"]};
+                letter-spacing:-0.03em;line-height:1.1;margin:0.5rem 0;'>{HERO_TITLE}</h1>
+            <p style='font-size:1.05rem;color:{COLORS["slate_600"]};max-width:600px;margin:0.75rem auto;line-height:1.5;'>
+                {HERO_SUBTITLE}</p>
+            <div style='display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:1.25rem;'>
+                <a href='{HERO_PRIMARY_CTA[1]}' style='display:inline-flex;align-items:center;gap:6px;
+                    background:linear-gradient(135deg,#10b981,#059669);color:white;padding:0.75rem 1.5rem;
+                    border-radius:10px;font-weight:700;font-size:0.9rem;text-decoration:none;
+                    box-shadow:0 4px 14px rgba(16,185,129,0.3);'>{HERO_PRIMARY_CTA[0]}</a>
+                <a href='{HERO_SECONDARY_CTA[1]}' style='display:inline-flex;align-items:center;gap:6px;
+                    background:#ffffff;color:#475569;padding:0.75rem 1.5rem;border-radius:10px;
+                    font-weight:600;font-size:0.9rem;text-decoration:none;
+                    border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.06);'>{HERO_SECONDARY_CTA[0]}</a>
+            </div>
+        </div>
+        """)
 
     # ---- TRUST BADGES (compact row) ----
     _html(f"""
@@ -244,7 +289,23 @@ def render_landing_page() -> None:
         </p>
     </div>
     """)
-    feature_grid(FEATURES, columns=3)
+    if feature_grid:
+        feature_grid(FEATURES, columns=3)
+    else:
+        # Minimal fallback feature cards
+        _html(f"""
+        <div style='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:1.5rem 0;'>
+            {''.join([
+                f"""<div style='background:white;border:1px solid {COLORS["slate_200"]};
+                    border-radius:14px;padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
+                    <div style='font-size:1.5rem;margin-bottom:0.5rem;'>{f["icon"]}</div>
+                    <div style='font-size:0.95rem;font-weight:700;color:{COLORS["slate_900"]};margin-bottom:0.3rem;'>{f["title"]}</div>
+                    <div style='font-size:0.82rem;color:{COLORS["slate_600"]};line-height:1.45;'>{f["description"]}</div>
+                </div>"""
+                for f in FEATURES
+            ])}
+        </div>
+        """)
 
     # ---- HOW IT WORKS ----
     _html(f"""
