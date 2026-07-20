@@ -50,6 +50,7 @@ REQUIRED_FILES = [
     "utils/db_health.py",
     "utils/business_card.py",
     "utils/card_image.py",
+    "utils/event_tracking/analytics_collector.py",
     "ai/__init__.py",
     "ai/assistant.py",
     "ai/engine.py",
@@ -63,6 +64,8 @@ REQUIRED_FILES = [
     "pages/common/ai_insights.py",
     "pages/common/ai_assistant.py",
     "pages/common/notifications.py",
+    "pages/common/analytics.py",
+    "pages/common/landing.py",
     "pages/common/product_detail.py",
     "pages/common/merchant_requests.py",
     "pages/common/public_card.py",
@@ -215,6 +218,51 @@ def _get_validate_config():
         return validate_config
     except Exception:
         return None
+
+
+def _render_app_url_debug() -> None:
+    """Admin-only: show the detected app URL + env vars.
+
+    Useful when debugging custom domain setups — admins can confirm
+    the app is reading the right ``APP_URL`` / ``RENDER_EXTERNAL_URL``
+    so QR codes, password-reset links, etc. point to the right place.
+    """
+    try:
+        is_logged_in, get_current_user, get_current_role = _get_auth_helpers()
+        if not all([is_logged_in, get_current_user, get_current_role]):
+            return
+        if (get_current_role() or "").lower() != "admin":
+            return
+    except Exception:
+        return
+
+    try:
+        from utils.app_url import get_app_url
+        detected = get_app_url()
+    except Exception as e:
+        detected = f"<error: {e}>"
+
+    with st.sidebar:
+        with st.expander("🌐 App URL (debug)", expanded=False):
+            st.markdown(f"**Detected:** `{detected}`")
+            st.caption("Used in QR codes, password-reset emails, public card links.")
+            st.markdown("**Env vars read (in order):**")
+            st.code(
+                "APP_URL={APP_URL}\n"
+                "RENDER_EXTERNAL_URL={RENDER_EXTERNAL_URL}\n"
+                "STREAMLIT_RUNTIME_ENV={STREAMLIT_RUNTIME_ENV}\n"
+                "st.secrets[APP_URL]={SECRETS}".format(
+                    APP_URL=os.environ.get("APP_URL", "<not set>"),
+                    RENDER_EXTERNAL_URL=os.environ.get("RENDER_EXTERNAL_URL", "<not set>"),
+                    STREAMLIT_RUNTIME_ENV=os.environ.get("STREAMLIT_RUNTIME_ENV", "<not set>"),
+                    SECRETS="<try/except>",
+                ),
+                language="bash",
+            )
+            st.markdown(
+                "💡 On Render, set `APP_URL=https://yourdomain.com` in the "
+                "Environment tab to use a custom domain."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +463,7 @@ def _role_nav(role: str, force_nav: str | None = None) -> str | None:
         "ai_insights": ("🤖", "AI Insights"),
         "assistant":   ("💬", "AI Assistant"),
         "notifications": ("🔔", "Notifications"),
+        "analytics":   ("📊", "Live Analytics"),
         "profile":     ("👤", "Profile"),
     }
     if role == "producer":
@@ -598,6 +647,11 @@ def render_role_content(choice: str | None):
             render_notifications()
             return
 
+        if choice == "analytics":
+            from pages.common.analytics import render_analytics_dashboard
+            render_analytics_dashboard()
+            return
+
         if choice == "merchant_requests":
             from pages.common.merchant_requests import render_merchant_requests
             render_merchant_requests()
@@ -756,24 +810,56 @@ def main():
                 st.error(f"Failed to load public card: {e}")
                 return
 
-        # Not logged in → show login page (hide sidebar).
-        # Use ``padding-top: 2.5rem`` so the welcome / hero section is
-        # fully visible (was 0.5rem — the green logo pill was being
-        # clipped by the viewport top on first load).
-        # Also inject a tiny ``st.components.v1.html`` iframe that runs
-        # a scroll-to-top script on every page render, so the welcome
-        # section is always scrolled into view (Streamlit's `st.markdown`
-        # strips ``<script>`` tags, so we need an iframe to run JS).
+        # Not logged in → show the **modern marketing landing page** ABOVE
+        # the auth form. Visitors see the value prop + features + benefits
+        # before being asked to sign in (like Stripe / Linear / Vercel).
+        #
+        # The auth form still lives in the right column so the page is
+        # scannable — marketing on the left, action on the right.
+
+        # Inject the Inter font and full-bleed layout
         st.markdown(
             """<style>
             [data-testid="stSidebar"] { display: none; }
             [data-testid="stSidebarCollapsedControl"] { display: none; }
-            .block-container { padding-top: 2.5rem; max-width: 540px; }
+            .block-container { padding-top: 1rem !important; max-width: 1200px !important; }
             /* Hide the scroll-to-top iframe — it's invisible by design */
             iframe[title="st_scroll_helper"] { display: none !important; }
             </style>""",
             unsafe_allow_html=True,
         )
+
+        # Render the marketing landing page first (it includes its own
+        # scroll-to-top via the page_header animation + the scroll JS below)
+        try:
+            from pages.common.landing import render_landing_page
+            render_landing_page()
+        except Exception as e:
+            st.warning(f"Landing page failed to load: {e}")
+
+        # Visual divider before the auth form
+        st.markdown(
+            """<div style='text-align:center;margin:2rem 0 1.5rem 0;'>
+                <div style='display:inline-flex;align-items:center;gap:14px;'>
+                    <div style='width:60px;height:1px;background:linear-gradient(90deg,transparent,#cbd5e1,transparent);'></div>
+                    <div style='font-size:0.78rem;font-weight:700;letter-spacing:0.16em;
+                                text-transform:uppercase;color:#94a3b8;'>Or jump right in</div>
+                    <div style='width:60px;height:1px;background:linear-gradient(90deg,transparent,#cbd5e1,transparent);'></div>
+                </div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+        # Render the auth form (login / signup / forgot / reset) inside
+        # a constrained max-width so it doesn't stretch full-width
+        st.markdown(
+            """<style>
+            .block-container { max-width: 540px !important; }
+            </style>""",
+            unsafe_allow_html=True,
+        )
+
+        # Scroll-to-top iframe
         try:
             import streamlit.components.v1 as components
             components.html(
@@ -787,7 +873,6 @@ def main():
                         } catch (e) {}
                     };
                     scrollToTop();
-                    // Re-run on any DOM mutation (Streamlit rerenders)
                     const observer = new MutationObserver(() => {
                         clearTimeout(window.__stScrollT);
                         window.__stScrollT = setTimeout(scrollToTop, 50);
@@ -823,6 +908,13 @@ def main():
         clear_jwt_expired()
 
     choice = render_sidebar()
+    # Admin-only debug panel for the detected app URL (useful when
+    # configuring a custom domain — shows the URL the app thinks it's
+    # running at, plus which env vars are set).
+    try:
+        _render_app_url_debug()
+    except Exception:
+        pass
     if choice and choice != "marketplace":
         st.session_state.pop("view_product_id", None)
     render_role_content(choice)
