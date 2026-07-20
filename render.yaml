@@ -1,0 +1,62 @@
+# ============================================================================
+# Render.com deployment configuration
+# ============================================================================
+# This file tells Render how to deploy your Streamlit app.
+# Render auto-detects render.yaml and provisions the service for you.
+#
+# How to use:
+#   1. Push this file (and your app code) to a GitHub repo
+#   2. Sign up at render.com
+#   3. New + → Blueprint → Connect your GitHub repo → Render auto-reads this file
+#   4. Add secrets (SUPABASE_URL, etc.) in the Render dashboard
+#   5. Wait for the build to finish — your app is live!
+#
+# Docs: https://render.com/docs/blueprint-spec
+# ============================================================================
+
+services:
+  - type: web
+    name: eschain-app
+    # Use Python 3.11 — stable, well-supported on Render
+    runtime: python
+    plan: free
+    # Region closest to your users (Frankfurt for Europe, Oregon for US West)
+    # Change to 'oregon' if you're closer to the US
+    region: frankfurt
+    # The branch Render should auto-deploy from
+    branch: main
+    # Build command — installs dependencies
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    # Start command — runs Streamlit
+    # --server.port=$PORT  → tells Streamlit to use Render's port
+    # --server.address=0.0.0.0 → accepts connections from any IP
+    # --server.headless=true  → required on Render (no browser)
+    # --browser.gatherUsageStats=false → disable telemetry banner
+    startCommand: |
+      streamlit run app.py \
+        --server.port=$PORT \
+        --server.address=0.0.0.0 \
+        --server.headless=true \
+        --browser.gatherUsageStats=false \
+        --server.enableCORS=false \
+        --server.enableXsrfProtection=true
+    # Auto-deploy on every push to main
+    autoDeploy: true
+    # Health check — pings the app every 30s
+    healthCheckPath: /_stcore/health
+    # Environment variables — set these in the Render dashboard
+    # (don't put secrets here; this is just for non-sensitive config)
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: STREAMLIT_SERVER_HEADLESS
+        value: "true"
+      - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+        value: "false"
+      # Secrets — set these in the Render dashboard under "Environment":
+      #   SUPABASE_URL
+      #   SUPABASE_ANON_KEY
+      #   SUPABASE_SERVICE_ROLE_KEY
+      #   GROQ_API_KEY
